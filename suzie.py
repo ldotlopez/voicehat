@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- encoding: utf-8 -*-
 
+import abc
 import argparse
+import collections
 import re
 import sys
 
@@ -14,7 +16,38 @@ class InternalError(Exception):
     pass
 
 
+PluginMatch = collections.namedtuple('PluginMatch', ['plugin', 'match'])
+
+# class Response:
+#     def __init__(self, text):
+#         self.text = text
+
+#     def __str__(self):
+#         return self.text
+
+
+# class SimpleResponse(Response):
+#     pass
+
+
+# class Conversation(Response):
+#     pass
+
+
+# class EndConversation(Response):
+#     pass
+
+class Response(str):
+    def is_final(self):
+        return True
+
+
+class FinalResponse(Response):
+    pass
+
+
 class Plugin:
+    TRIGGERS = []
     WEIGHT = 0
 
     def __init__(self):
@@ -30,8 +63,9 @@ class Plugin:
 
         return None
 
-    def handle(self, text):
-        return text
+    @abc.abstractmethod
+    def handle(self, *args, **kwargs):
+        raise NotImplementedError()
 
 
 class Notes(Plugin):
@@ -59,28 +93,34 @@ class Router:
         self.conversation = None
         self.registry.append(plugin)
 
-    def handle(self, text):
-        text = re.subn(r'\s+', ' ', text)[0]
-
+    def get_handlers(self, text):
         plugins = sorted(self.registry, key=lambda x: x.WEIGHT)
+
         for plugin in plugins:
             m = plugin.matches(text)
             if not m:
                 continue
 
-            args = ()
-            kwargs = m.groupdict()
-            if not kwargs:
-                args = m.groups()
+            yield PluginMatch(plugin, m)
 
-            try:
-                return plugin.handle(*args, **kwargs)
-            except SyntaxError:
-                raise
-            except Exception as e:
-                raise InternalError(e) from e
+    def get_handler(self, text):
+        g = self.get_handlers(text)
+        try:
+            return next(g)
+        except StopIteration:
+            raise TextNotMatched(text)
 
-        raise TextNotMatched(text)
+    def handle(self, text):
+        text = re.subn(r'\s+', ' ', text.strip())[0]
+
+        handler = self.get_handler(text)
+
+        args = ()
+        kwargs = handler.match.groupdict()
+        if not kwargs:
+            args = handler.match.groups()
+
+        return handler.plugin.handle(*args, **kwargs)
 
 
 def main():
@@ -89,18 +129,31 @@ def main():
     r.register(Weather())
 
     argparser = argparse.ArgumentParser()
-    argparser.add_argument(dest='text', nargs='+')
+    argparser.add_argument(dest='text', nargs='*')
     args = argparser.parse_args(sys.argv[1:])
 
-    try:
-        resp = r.handle(' '.join(args.text))
-        print(resp)
+    text = ' '.join(args.text)
+    if not text:
+        text = input('> ')
 
-    except TextNotMatched:
-        print("[?]", "I don't how to handle that")
+    while True:
+        try:
+            resp = r.handle(text)
 
-    except InternalError as e:
-        print("[!] Internal error: {e!r}".format(e=e.args[0]))
+        except TextNotMatched:
+            print("[?]", "I don't how to handle that")
+            break
+
+        except InternalError as e:
+            print("[!] Internal error: {e!r}".format(e=e.args[0]))
+            break
+
+        if resp.is_final:
+            print(resp)
+            break
+
+        else:
+            raise NotImplementedError()
 
 
 if __name__ == '__main__':
