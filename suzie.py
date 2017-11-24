@@ -104,9 +104,8 @@ class Router:
             yield PluginMatch(plugin, m)
 
     def get_handler(self, text):
-        g = self.get_handlers(text)
         try:
-            return next(g)
+            return next(self.get_handlers(text))
         except StopIteration:
             raise TextNotMatched(text)
 
