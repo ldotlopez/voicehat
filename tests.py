@@ -17,8 +17,17 @@ class EchoPlugin(suzie.Plugin):
         r'^echo (.+)$'
     ]
 
-    def handle(self, arg):
-        return arg
+    def handle(self, text):
+        return text
+
+
+class EchoKeywordPlugin(suzie.Plugin):
+    TRIGGERS = [
+        r'^echo (?P<t>.+)$'
+    ]
+
+    def handle(self, t=''):
+        return t
 
 
 class TestSuzie(unittest.TestCase):
@@ -60,6 +69,12 @@ class TestSuzie(unittest.TestCase):
         self.assertEqual(
             self.r.handle('echo foo'),
             'foo')
+
+    def test_keyword_plugin_response(self):
+        self.r.register(EchoKeywordPlugin())
+        self.assertEqual(
+            self.r.handle('echo bar'),
+            'bar')
 
 
 if __name__ == '__main__':

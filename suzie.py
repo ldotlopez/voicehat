@@ -16,34 +16,9 @@ class InternalError(Exception):
     pass
 
 
-PluginMatch = collections.namedtuple('PluginMatch', ['plugin', 'match'])
-
-# class Response:
-#     def __init__(self, text):
-#         self.text = text
-
-#     def __str__(self):
-#         return self.text
-
-
-# class SimpleResponse(Response):
-#     pass
-
-
-# class Conversation(Response):
-#     pass
-
-
-# class EndConversation(Response):
-#     pass
-
-class Response(str):
-    def is_final(self):
-        return True
-
-
-class FinalResponse(Response):
-    pass
+Handler = collections.namedtuple('Handler', [
+    'plugin', 'args', 'kwargs'
+])
 
 
 class Plugin:
@@ -58,10 +33,17 @@ class Plugin:
     def matches(self, text):
         for trigger in self.triggers:
             m = trigger.search(text)
-            if m:
-                return m
+            if not m:
+                continue
 
-        return None
+            args = ()
+            kwargs = m.groupdict()
+            if not kwargs:
+                args = m.groups()
+
+            return args, kwargs
+
+        raise TextNotMatched(text)
 
     @abc.abstractmethod
     def handle(self, *args, **kwargs):
@@ -97,11 +79,12 @@ class Router:
         plugins = sorted(self.registry, key=lambda x: x.WEIGHT)
 
         for plugin in plugins:
-            m = plugin.matches(text)
-            if not m:
+            try:
+                args, kwargs = plugin.matches(text)
+            except TextNotMatched:
                 continue
 
-            yield PluginMatch(plugin, m)
+            yield Handler(plugin, args, kwargs)
 
     def get_handler(self, text):
         try:
@@ -110,16 +93,12 @@ class Router:
             raise TextNotMatched(text)
 
     def handle(self, text):
+        # Sanitize text
         text = re.subn(r'\s+', ' ', text.strip())[0]
 
+        # Get handler for this text
         handler = self.get_handler(text)
-
-        args = ()
-        kwargs = handler.match.groupdict()
-        if not kwargs:
-            args = handler.match.groups()
-
-        return handler.plugin.handle(*args, **kwargs)
+        return handler.plugin.handle(*handler.args, **handler.kwargs)
 
 
 def main():
