@@ -21,6 +21,23 @@ Handler = collections.namedtuple('Handler', [
 ])
 
 
+class Response(str):
+    pass
+
+
+class Conversation:
+    def __init__(self, text):
+        self.log = [text]
+        self.opened = True
+
+    def add(self, text):
+        self.log.append(text)
+
+    @property
+    def reply(self):
+        return self.log[-1]
+
+
 class Plugin:
     TRIGGERS = []
     WEIGHT = 0
@@ -56,8 +73,14 @@ class Notes(Plugin):
         r'^apunta (?P<item>.+)$'
     ]
 
+    def reply(self, conversation):
+        pass
+
     def handle(self, item=''):
-        return 'apuntado: {}'.format(item)
+        if not item:
+            return Conversation('ok')
+
+        return Response('apuntado: {}'.format(item))
 
 
 class Weather(Plugin):
@@ -65,6 +88,9 @@ class Weather(Plugin):
         r'^tiempo en (.+)$',
         r'^lloverá$'
     ]
+
+    def handle(self, *args, **kwargs):
+        return Response('Ni idea')
 
 
 class Router:
@@ -113,19 +139,40 @@ def main(args=None):
     argparser.add_argument(dest='text', nargs='*')
     args = argparser.parse_args(args)
 
-    text = ' '.join(args.text)
+    text, interactive = ' '.join(args.text), False
     if not text:
-        text = input('> ')
+        text, interactive = input('> '), True
 
-    try:
-        resp = r.handle(text)
-        print(resp)
+    running = True
+    while running:
+        running = False
+        if not interactive:
+            running = False
 
-    except TextNotMatched:
-        print("[?] I don't how to handle that")
+        if text == 'bye':
+            running = False
+            continue
 
-    except InternalError as e:
-        print("[!] Internal error: {e!r}".format(e=e.args[0]))
+        try:
+            resp = r.handle(text)
+
+        except TextNotMatched:
+            print("[?] I don't how to handle that")
+            continue
+
+        except InternalError as e:
+            print("[!] Internal error: {e!r}".format(e=e.args[0]))
+            continue
+
+        if isinstance(resp, Response):
+            print(resp)
+
+        elif isinstance(resp, Conversation):
+            print(resp.reply)
+
+        else:
+            print("[!] Can't handle respose")
+            continue
 
 
 if __name__ == '__main__':
