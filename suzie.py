@@ -2,6 +2,7 @@
 # -*- encoding: utf-8 -*-
 
 import abc
+import enum
 import argparse
 import collections
 import re
@@ -27,15 +28,43 @@ class Response(str):
 
 class Conversation:
     def __init__(self, text):
-        self.log = [text]
-        self.opened = True
-
-    def add(self, text):
-        self.log.append(text)
+        self._turn = Turn.IA
+        self._log = [text]
+        self._closed = False
 
     @property
-    def reply(self):
-        return self.log[-1]
+    def last(self):
+        return self._log[-1]
+
+    @property
+    def turn(self):
+        return self._turn
+
+    @property
+    def closed(self):
+        return self._closed
+
+    def close(self):
+        self._closed = True
+
+    def reply(self, text):
+        if self.closed:
+            raise ValueError(self, 'Conversation is closed')
+
+        if not text:
+            raise ValueError(text, "text can't be empty")
+
+        self.log.append(text)
+        self._turn = Turn.USER if self._turn == Turn.USER else Turn.IA
+
+    def reply_and_close(self, text):
+        self.reply(text)
+        self.close()
+
+
+class Turn(enum.Enum):
+    USER = 0
+    IA = 1
 
 
 class Plugin:
