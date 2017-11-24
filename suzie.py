@@ -101,38 +101,32 @@ class Router:
         return handler.plugin.handle(*handler.args, **handler.kwargs)
 
 
-def main():
+def main(args=None):
+    if args is None:
+        args = sys.argv[:1]
+
     r = Router()
     r.register(Notes())
     r.register(Weather())
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument(dest='text', nargs='*')
-    args = argparser.parse_args(sys.argv[1:])
+    args = argparser.parse_args(args)
 
     text = ' '.join(args.text)
     if not text:
         text = input('> ')
 
-    while True:
-        try:
-            resp = r.handle(text)
+    try:
+        resp = r.handle(text)
+        print(resp)
 
-        except TextNotMatched:
-            print("[?]", "I don't how to handle that")
-            break
+    except TextNotMatched:
+        print("[?] I don't how to handle that")
 
-        except InternalError as e:
-            print("[!] Internal error: {e!r}".format(e=e.args[0]))
-            break
-
-        if resp.is_final:
-            print(resp)
-            break
-
-        else:
-            raise NotImplementedError()
+    except InternalError as e:
+        print("[!] Internal error: {e!r}".format(e=e.args[0]))
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
