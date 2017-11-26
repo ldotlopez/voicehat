@@ -22,15 +22,13 @@ Handler = collections.namedtuple('Handler', [
 ])
 
 
-class Response(str):
-    pass
-
-
 class Conversation:
     def __init__(self, text):
-        self._turn = Turn.IA
+        self._turn = Turn.AGENT
         self._log = [text]
         self._closed = False
+        self._plugin = None
+        self.data = {}
 
     @property
     def last(self):
@@ -44,6 +42,17 @@ class Conversation:
     def closed(self):
         return self._closed
 
+    @property
+    def plugin(self):
+        return self._plugin
+
+    @plugin.setter
+    def plugin(self, plugin):
+        if self._plugin is not None:
+            raise ValueError(self, "Conversation already associated with a plugin")
+
+        self._plugin = plugin
+
     def close(self):
         self._closed = True
 
@@ -54,17 +63,25 @@ class Conversation:
         if not text:
             raise ValueError(text, "text can't be empty")
 
-        self.log.append(text)
-        self._turn = Turn.USER if self._turn == Turn.USER else Turn.IA
+        self._log.append(text)
+        self._turn = Turn.USER if self._turn == Turn.USER else Turn.AGENT
 
     def reply_and_close(self, text):
         self.reply(text)
         self.close()
 
+    def dump(self):
+        for (idx, text) in enumerate(self._log):
+            print("[{dir} {who}] {text}".format(
+                dir='>' if not idx % 2 else '<',
+                who='User ' if not idx % 2 else 'Agent',
+                text=text
+                ))
+
 
 class Turn(enum.Enum):
     USER = 0
-    IA = 1
+    AGENT = 1
 
 
 class Plugin:
@@ -92,39 +109,66 @@ class Plugin:
         raise TextNotMatched(text)
 
     @abc.abstractmethod
-    def handle(self, *args, **kwargs):
+    def reply(self, conversation):
         raise NotImplementedError()
 
 
 class Notes(Plugin):
+    class Stage:
+        NONE = 0
+        ANNOTATING = 1
+
+    NAME = 'notes'
     TRIGGERS = [
         r'^anota$',
-        r'^apunta (?P<item>.+)$'
+        r'^anota (?P<item>.+)$'
     ]
 
-    def reply(self, conversation):
-        pass
+    def reply(self, conv, item=None):
+        if item:
+            conv.reply_and_close('Got your note: ' + conv.last)
+            return
 
-    def handle(self, item=''):
-        if not item:
-            return Conversation('ok')
+        stage = conv.data.get('stage', self.Stage.NONE)
 
-        return Response('apuntado: {}'.format(item))
+        if stage == self.Stage.NONE:
+            conv.reply('ok, tellme what')
+            conv.data['stage'] = self.Stage.ANNOTATING
+
+        elif stage == self.Stage.ANNOTATING:
+            conv.reply_and_close('Got your note: ' + conv.last)
 
 
 class Weather(Plugin):
+    NAME = 'weather'
     TRIGGERS = [
         r'^tiempo en (.+)$',
-        r'^lloverá$'
+        r'^tiempo$'
     ]
 
-    def handle(self, *args, **kwargs):
-        return Response('Ni idea')
+    def reply(self, conversation, *args, **kwargs):
+        conversation.reply('To be done :-)')
 
 
 class Router:
     def __init__(self):
         self.registry = []
+        self.plugin = None
+        self.conversation = None
+
+    @property
+    def prompt(self):
+        if self.plugin is None:
+            return '> '
+        else:
+            return '[' + self.plugin.NAME + '] '
+
+    @property
+    def in_conversation(self):
+        if not self.conversation:
+            return False
+
+        return not self.conversation.closed
 
     def register(self, plugin):
         self.conversation = None
@@ -151,9 +195,37 @@ class Router:
         # Sanitize text
         text = re.subn(r'\s+', ' ', text.strip())[0]
 
-        # Get handler for this text
-        handler = self.get_handler(text)
-        return handler.plugin.handle(*handler.args, **handler.kwargs)
+        if self.conversation is None:
+            # Open a new conversation
+            handler = self.get_handler(text)
+            args, kwargs = handler.args, handler.kwargs
+            self.conversation = Conversation(text)
+            self.plugin = handler.plugin
+
+        else:
+            # User replied a previous opened conversation
+            args, kwargs = (), {}
+            self.conversation.reply(text)
+
+        # Try to reply
+        try:
+            self.plugin.reply(self.conversation, *args, **kwargs)
+        except SyntaxError:
+            raise
+
+        except Exception as e:
+            self.conversation.close()
+            self.conversation = None
+            self.plugin = None
+            return 'Error: {e!r}'.format(e=e)
+
+        ret = self.conversation.last
+
+        if self.conversation.closed:
+            self.conversation = None
+            self.plugin = None
+
+        return ret
 
 
 def main(args=None):
@@ -168,22 +240,19 @@ def main(args=None):
     argparser.add_argument(dest='text', nargs='*')
     args = argparser.parse_args(args)
 
-    text, interactive = ' '.join(args.text), False
+    text = ' '.join(args.text)
     if not text:
-        text, interactive = input('> '), True
+        text = input(r.prompt)
 
     running = True
     while running:
-        running = False
-        if not interactive:
-            running = False
-
-        if text == 'bye':
+        if not r.in_conversation and text == 'bye':
             running = False
             continue
 
         try:
             resp = r.handle(text)
+            print(resp)
 
         except TextNotMatched:
             print("[?] I don't how to handle that")
@@ -193,15 +262,8 @@ def main(args=None):
             print("[!] Internal error: {e!r}".format(e=e.args[0]))
             continue
 
-        if isinstance(resp, Response):
-            print(resp)
-
-        elif isinstance(resp, Conversation):
-            print(resp.reply)
-
-        else:
-            print("[!] Can't handle respose")
-            continue
+        finally:
+            text = input(r.prompt)
 
 
 if __name__ == '__main__':
