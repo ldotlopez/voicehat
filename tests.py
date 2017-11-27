@@ -7,27 +7,30 @@ import suzie
 
 
 class SimplePlugin(suzie.Plugin):
+    NAME = 'simple'
     TRIGGERS = [
         r'^x$'
     ]
 
 
 class EchoPlugin(suzie.Plugin):
+    NAME = 'echo'
     TRIGGERS = [
         r'^echo (.+)$'
     ]
 
-    def handle(self, text):
-        return text
+    def reply(self, conv, text):
+        conv.reply_and_close(text)
 
 
 class EchoKeywordPlugin(suzie.Plugin):
+    NAME = 'echo-keyword'
     TRIGGERS = [
         r'^echo (?P<t>.+)$'
     ]
 
-    def handle(self, t=''):
-        return t
+    def reply(self, conv, t=''):
+        conv.reply_and_close(t)
 
 
 class TestSuzie(unittest.TestCase):

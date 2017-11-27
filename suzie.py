@@ -193,7 +193,7 @@ class Router:
 
     def handle(self, text):
         # Sanitize text
-        text = re.subn(r'\s+', ' ', text.strip())[0]
+        text = re.sub(r'\s+', ' ', text.strip())
 
         if self.conversation is None:
             # Open a new conversation
@@ -214,10 +214,12 @@ class Router:
             raise
 
         except Exception as e:
+            ret = 'Error in plugin {plugin}: {e!r}'.format(
+                plugin=self.plugin.NAME, e=e)
             self.conversation.close()
             self.conversation = None
             self.plugin = None
-            return 'Error: {e!r}'.format(e=e)
+            return ret
 
         ret = self.conversation.last
 
