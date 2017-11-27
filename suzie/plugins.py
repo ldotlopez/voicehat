@@ -1,8 +1,10 @@
 import abc
+import enum
 import re
 
 
 import suzie
+import homelib
 
 
 class Plugin:
@@ -82,13 +84,42 @@ class Notes(Plugin):
 class Weather(Plugin):
     NAME = 'weather'
     TRIGGERS = [
-        r'^tiempo en (?P<where>.+)$',
-        r'^tiempo$'
+        r"^lloverá$",
+        r"^lloverá (?P<when>.+)$"
     ]
     MESSAGES = {
-        'TO_BE_DONE': 'To be done :-)'
+        'INVALID_WHEN': 'Solo hoy o mañana',
+        'REQUEST_WHEN': 'Cuando, ¿hoy o mañana?',
+        homelib.Aemet.Probability.YES: 'Si',
+        homelib.Aemet.Probability.LIKELY: 'Posiblemente',
+        homelib.Aemet.Probability.MAYBE: 'Puede',
+        homelib.Aemet.Probability.UNLIKELY: 'No creo',
+        homelib.Aemet.Probability.NO: 'No'
     }
 
-    def reply(self, msg, data, where=None):
-        msg = self.t('TO_BE_DONE')
+    class Stage(enum.Enum):
+        NONE = 0
+        REQUEST_WHEN = 1
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.aemet = homelib.Aemet()
+
+    def reply(self, msg, data, when=None):
+        when_table = {
+            'hoy': homelib.Aemet.When.TODAY,
+            'mañana': homelib.Aemet.When.TOMORROW,
+        }
+
+        when = when or str(msg)
+        if not when:
+            return suzie.FinalMessage('not')
+
+        try:
+            when = when_table[when]
+        except KeyError:
+            return suzie.FinalMessage('Invalid when')
+
+        res = self.aemet.info(when=when)
+        msg = self.t(res)
         return suzie.FinalMessage(msg)
