@@ -14,13 +14,6 @@ class Router:
         self.conversation = None
 
     @property
-    def prompt(self):
-        if self.plugin is None:
-            return '> '
-        else:
-            return '[' + self.plugin.NAME + '] '
-
-    @property
     def in_conversation(self):
         if not self.conversation:
             return False

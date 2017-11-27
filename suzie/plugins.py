@@ -8,11 +8,18 @@ import suzie
 class Plugin:
     TRIGGERS = []
     WEIGHT = 0
+    MESSAGES = []
 
     def __init__(self):
         self.triggers = [
             re.compile(trigger, re.IGNORECASE)
             for trigger in self.__class__.TRIGGERS]
+
+    def t(self, id, **kwargs):
+        try:
+            return self.MESSAGES[id].format(**kwargs)
+        except KeyError:
+            return "{id} ({kwargs!r})".format(id=id, kwargs=kwargs)
 
     def matches(self, text):
         for trigger in self.triggers:
@@ -42,23 +49,34 @@ class Notes(Plugin):
     NAME = 'notes'
     TRIGGERS = [
         r'^anota$',
-        r'^anota (?P<item>.+)$'
+        r'^anota (?P<note>.+)$'
     ]
 
-    def reply(self, msg, data, item=None):
-        if item:
-            msg = 'Got your note: ' + item
+    MESSAGES = {
+        'REQUEST_NOTE': r'What is the message?',
+        'OK': r'OK. Got your note: {note}'
+    }
+
+    def reply(self, msg, data, note=None):
+        if note:
+            msg = self.t('OK', note=note)
             return suzie.FinalMessage(msg)
 
         stage = data.get('stage', self.Stage.NONE)
 
         if stage == self.Stage.NONE:
             data.set('stage', self.Stage.ANNOTATING)
-            return suzie.AgentMessage('ok, tellme what')
+
+            msg = self.t('REQUEST_NOTE')
+            return suzie.AgentMessage(msg)
 
         elif stage == self.Stage.ANNOTATING:
-            msg = 'Got your note: ' + msg
+            self.save(msg)
+            msg = self.t('OK', note=msg)
             return suzie.FinalMessage(msg)
+
+    def save(self, note):
+        pass
 
 
 class Weather(Plugin):
@@ -67,7 +85,10 @@ class Weather(Plugin):
         r'^tiempo en (?P<where>.+)$',
         r'^tiempo$'
     ]
+    MESSAGES = {
+        'TO_BE_DONE': 'To be done :-)'
+    }
 
     def reply(self, msg, data, where=None):
-        msg = 'To be done :-)'
+        msg = self.t('TO_BE_DONE')
         return suzie.FinalMessage(msg)

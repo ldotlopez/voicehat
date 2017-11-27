@@ -6,6 +6,13 @@ import suzie
 from suzie import plugins
 
 
+def prompt(router):
+    if router.plugin is None:
+        return '> '
+    else:
+        return '[' + router.plugin.NAME + '] '
+
+
 def main(args=None):
     if args is None:
         args = sys.argv[:1]
@@ -20,7 +27,7 @@ def main(args=None):
 
     text, interactive = ' '.join(args.text), False
     if not text:
-        text, interactive = input(r.prompt), True
+        text, interactive = input(prompt(r)), True
 
     running = True
     while running:
@@ -45,7 +52,7 @@ def main(args=None):
                 running = False
 
             if running:
-                text = input(r.prompt)
+                text = input(prompt(r))
 
 
 if __name__ == '__main__':
