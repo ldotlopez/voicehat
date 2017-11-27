@@ -18,9 +18,9 @@ def main(args=None):
     argparser.add_argument(dest='text', nargs='*')
     args = argparser.parse_args(args)
 
-    text = ' '.join(args.text)
+    text, interactive = ' '.join(args.text), False
     if not text:
-        text = input(r.prompt)
+        text, interactive = input(r.prompt), True
 
     running = True
     while running:
@@ -41,7 +41,11 @@ def main(args=None):
             continue
 
         finally:
-            text = input(r.prompt)
+            if not r.in_conversation and not interactive:
+                running = False
+
+            if running:
+                text = input(r.prompt)
 
 
 if __name__ == '__main__':
