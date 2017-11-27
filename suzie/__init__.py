@@ -7,12 +7,90 @@ import collections
 import re
 
 
-class TextNotMatched(Exception):
-    pass
+class Router:
+    def __init__(self):
+        self.registry = []
+        self.plugin = None
+        self.conversation = None
 
+    @property
+    def prompt(self):
+        if self.plugin is None:
+            return '> '
+        else:
+            return '[' + self.plugin.NAME + '] '
 
-class InternalError(Exception):
-    pass
+    @property
+    def in_conversation(self):
+        if not self.conversation:
+            return False
+
+        return not self.conversation.closed
+
+    def register(self, plugin):
+        self.conversation = None
+        self.registry.append(plugin)
+
+    def get_handlers(self, text):
+        plugins = sorted(self.registry, key=lambda x: x.WEIGHT)
+
+        for plugin in plugins:
+            try:
+                args, kwargs = plugin.matches(text)
+            except TextNotMatched:
+                continue
+
+            yield Handler(plugin, args, kwargs)
+
+    def get_handler(self, text):
+        try:
+            return next(self.get_handlers(text))
+        except StopIteration as e:
+            raise TextNotMatched(text) from e
+
+    def handle(self, text):
+        # Sanitize text
+        text = re.sub(r'\s+', ' ', text.strip())
+        message = UserMessage(text)
+
+        # Create a new conversation or update the opened one
+        if self.conversation is None:
+            handler = self.get_handler(text)
+            args, kwargs = handler.args, handler.kwargs
+
+            self.conversation = Conversation(message)
+            self.plugin = handler.plugin
+
+        else:
+            args, kwargs = (), {}
+
+            self.conversation.reply(message)
+
+        # Try to reply with active plugin
+        try:
+            response = self.plugin.reply(
+                self.conversation.last, self.conversation.data,
+                *args, **kwargs)
+
+        except SyntaxError:
+            raise
+
+        except Exception as e:
+            ret = 'Error in plugin {plugin}: {e!r}'.format(
+                plugin=self.plugin.NAME, e=e)
+            self.conversation.close()
+            self.conversation = None
+            self.plugin = None
+            return ret
+
+        # Add agent response to conversation
+        self.conversation.reply(response)
+
+        if self.conversation.closed:
+            self.conversation = None
+            self.plugin = None
+
+        return response
 
 
 Handler = collections.namedtuple('Handler', [
@@ -106,87 +184,9 @@ class FinalMessage(AgentMessage):
     pass
 
 
-class Router:
-    def __init__(self):
-        self.registry = []
-        self.plugin = None
-        self.conversation = None
+class TextNotMatched(Exception):
+    pass
 
-    @property
-    def prompt(self):
-        if self.plugin is None:
-            return '> '
-        else:
-            return '[' + self.plugin.NAME + '] '
 
-    @property
-    def in_conversation(self):
-        if not self.conversation:
-            return False
-
-        return not self.conversation.closed
-
-    def register(self, plugin):
-        self.conversation = None
-        self.registry.append(plugin)
-
-    def get_handlers(self, text):
-        plugins = sorted(self.registry, key=lambda x: x.WEIGHT)
-
-        for plugin in plugins:
-            try:
-                args, kwargs = plugin.matches(text)
-            except TextNotMatched:
-                continue
-
-            yield Handler(plugin, args, kwargs)
-
-    def get_handler(self, text):
-        try:
-            return next(self.get_handlers(text))
-        except StopIteration as e:
-            raise TextNotMatched(text) from e
-
-    def handle(self, text):
-        # Sanitize text
-        text = re.sub(r'\s+', ' ', text.strip())
-        message = UserMessage(text)
-
-        # Create a new conversation or update the opened one
-        if self.conversation is None:
-            handler = self.get_handler(text)
-            args, kwargs = handler.args, handler.kwargs
-
-            self.conversation = Conversation(message)
-            self.plugin = handler.plugin
-
-        else:
-            args, kwargs = (), {}
-
-            self.conversation.reply(message)
-
-        # Try to reply with active plugin
-        try:
-            response = self.plugin.reply(
-                self.conversation.last, self.conversation.data,
-                *args, **kwargs)
-
-        except SyntaxError:
-            raise
-
-        except Exception as e:
-            ret = 'Error in plugin {plugin}: {e!r}'.format(
-                plugin=self.plugin.NAME, e=e)
-            self.conversation.close()
-            self.conversation = None
-            self.plugin = None
-            return ret
-
-        # Add agent response to conversation
-        self.conversation.reply(response)
-
-        if self.conversation.closed:
-            self.conversation = None
-            self.plugin = None
-
-        return response
+class InternalError(Exception):
+    pass
