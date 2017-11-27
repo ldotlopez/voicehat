@@ -188,8 +188,8 @@ class Router:
     def get_handler(self, text):
         try:
             return next(self.get_handlers(text))
-        except StopIteration:
-            raise TextNotMatched(text)
+        except StopIteration as e:
+            raise TextNotMatched(text) from e
 
     def handle(self, text):
         # Sanitize text

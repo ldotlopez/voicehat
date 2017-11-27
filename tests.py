@@ -26,11 +26,42 @@ class EchoPlugin(suzie.Plugin):
 class EchoKeywordPlugin(suzie.Plugin):
     NAME = 'echo-keyword'
     TRIGGERS = [
-        r'^echo (?P<t>.+)$'
+        r"^echo (?P<t>.+)$"
     ]
 
     def reply(self, conv, t=''):
         conv.reply_and_close(t)
+
+
+class StagedPlugin(suzie.Plugin):
+    NAME = 'staged'
+    TRIGGERS = [
+        r"let's talk"
+    ]
+
+    def reply(self, conv):
+        if 'stage' not in conv.data:
+            conv.data['stage'] = 0
+        if 'info' not in conv.data:
+            conv.data['info'] = []
+
+        stage = conv.data['stage']
+        info = conv.data['info']
+
+        if stage == 0:
+            conv.reply('request more info')
+            stage = 1
+
+        elif stage == 1:
+            info.append(conv.last)
+            conv.reply('request even more info')
+            stage = 2
+
+        elif stage == 2:
+            info.append(conv.last)
+            conv.reply_and_close('ok: ' + ' '.join(info))
+
+        conv.data['stage'] = stage
 
 
 class TestSuzie(unittest.TestCase):
@@ -78,6 +109,15 @@ class TestSuzie(unittest.TestCase):
         self.assertEqual(
             self.r.handle('echo bar'),
             'bar')
+
+    def test_conversation(self):
+        self.r.register(StagedPlugin())
+        self.r.handle("let's talk")
+        self.r.handle("one")
+        resp = self.r.handle("two")
+        self.assertEqual(
+            resp,
+            "ok: one two")
 
 
 if __name__ == '__main__':
