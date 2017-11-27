@@ -45,27 +45,29 @@ class Notes(Plugin):
         r'^anota (?P<item>.+)$'
     ]
 
-    def reply(self, conv, item=None):
+    def reply(self, msg, data, item=None):
         if item:
-            conv.reply_and_close('Got your note: ' + conv.last)
-            return
+            msg = 'Got your note: ' + item
+            return suzie.FinalMessage(msg)
 
-        stage = conv.data.get('stage', self.Stage.NONE)
+        stage = data.get('stage', self.Stage.NONE)
 
         if stage == self.Stage.NONE:
-            conv.reply('ok, tellme what')
-            conv.data['stage'] = self.Stage.ANNOTATING
+            data.set('stage', self.Stage.ANNOTATING)
+            return suzie.AgentMessage('ok, tellme what')
 
         elif stage == self.Stage.ANNOTATING:
-            conv.reply_and_close('Got your note: ' + conv.last)
+            msg = 'Got your note: ' + msg
+            return suzie.FinalMessage(msg)
 
 
 class Weather(Plugin):
     NAME = 'weather'
     TRIGGERS = [
-        r'^tiempo en (.+)$',
+        r'^tiempo en (?P<where>.+)$',
         r'^tiempo$'
     ]
 
-    def reply(self, conversation, *args, **kwargs):
-        conversation.reply_and_close('To be done :-)')
+    def reply(self, msg, data, where=None):
+        msg = 'To be done :-)'
+        return suzie.FinalMessage(msg)

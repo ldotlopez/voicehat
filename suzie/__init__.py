@@ -20,20 +20,15 @@ Handler = collections.namedtuple('Handler', [
 ])
 
 
-class Store(dict):
-    def set(self, key, value):
-        self[key] = value
-
-    def delete(self, key):
-        del(self[key])
-
-
 class Conversation:
-    def __init__(self, text):
+    def __init__(self, message):
+        if not isinstance(message, UserMessage):
+            msg = "Only user can start conversations"
+            raise ValueError(message, msg)
+
+        self._log = [message]
         self._turn = Turn.AGENT
-        self._log = [text]
         self._closed = False
-        self._plugin = None
         self.data = Store()
 
     @property
@@ -48,47 +43,67 @@ class Conversation:
     def closed(self):
         return self._closed
 
-    @property
-    def plugin(self):
-        return self._plugin
-
-    @plugin.setter
-    def plugin(self, plugin):
-        if self._plugin is not None:
-            msg = "Conversation already associated with a plugin"
-            raise ValueError(self, msg)
-
-        self._plugin = plugin
-
     def close(self):
         self._closed = True
 
-    def reply(self, text):
+    def reply(self, message):
         if self.closed:
             raise ValueError(self, 'Conversation is closed')
 
-        if not text:
-            raise ValueError(text, "text can't be empty")
+        if not isinstance(message, Message):
+            raise TypeError(message)
 
-        self._log.append(text)
-        self._turn = Turn.USER if self._turn == Turn.USER else Turn.AGENT
+        if not message:
+            raise ValueError(message, "response can't be empty")
 
-    def reply_and_close(self, text):
-        self.reply(text)
-        self.close()
+        if self._turn == Turn.USER and not isinstance(message, UserMessage):
+            raise TypeError('Was user turn')
+
+        if self._turn == Turn.AGENT and not isinstance(message, AgentMessage):
+            raise TypeError('Was agent turn')
+
+        self._log.append(message)
+        self._turn = Turn.AGENT if self._turn == Turn.USER else Turn.USER
+
+        if isinstance(message, FinalMessage):
+            self.close()
 
     def dump(self):
-        for (idx, text) in enumerate(self._log):
-            print("[{dir} {who}] {text}".format(
+        for (idx, message) in enumerate(self._log):
+            print("[{dir} {who}] {msg}".format(
                 dir='>' if not idx % 2 else '<',
                 who='User ' if not idx % 2 else 'Agent',
-                text=text
+                msg=message
                 ))
 
 
 class Turn(enum.Enum):
     USER = 0
     AGENT = 1
+
+
+class Store(dict):
+    def set(self, key, value):
+        self[key] = value
+
+    def delete(self, key):
+        del(self[key])
+
+
+class Message(str):
+    pass
+
+
+class UserMessage(Message):
+    pass
+
+
+class AgentMessage(Message):
+    pass
+
+
+class FinalMessage(AgentMessage):
+    pass
 
 
 class Router:
@@ -135,22 +150,27 @@ class Router:
     def handle(self, text):
         # Sanitize text
         text = re.sub(r'\s+', ' ', text.strip())
+        message = UserMessage(text)
 
+        # Create a new conversation or update the opened one
         if self.conversation is None:
-            # Open a new conversation
             handler = self.get_handler(text)
             args, kwargs = handler.args, handler.kwargs
-            self.conversation = Conversation(text)
+
+            self.conversation = Conversation(message)
             self.plugin = handler.plugin
 
         else:
-            # User replied a previous opened conversation
             args, kwargs = (), {}
-            self.conversation.reply(text)
 
-        # Try to reply
+            self.conversation.reply(message)
+
+        # Try to reply with active plugin
         try:
-            self.plugin.reply(self.conversation, *args, **kwargs)
+            response = self.plugin.reply(
+                self.conversation.last, self.conversation.data,
+                *args, **kwargs)
+
         except SyntaxError:
             raise
 
@@ -162,10 +182,11 @@ class Router:
             self.plugin = None
             return ret
 
-        ret = self.conversation.last
+        # Add agent response to conversation
+        self.conversation.reply(response)
 
         if self.conversation.closed:
             self.conversation = None
             self.plugin = None
 
-        return ret
+        return response
