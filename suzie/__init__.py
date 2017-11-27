@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # -*- encoding: utf-8 -*-
 
-import abc
+
 import enum
-import argparse
 import collections
 import re
-import sys
 
 
 class TextNotMatched(Exception):
@@ -22,13 +20,21 @@ Handler = collections.namedtuple('Handler', [
 ])
 
 
+class Store(dict):
+    def set(self, key, value):
+        self[key] = value
+
+    def delete(self, key):
+        del(self[key])
+
+
 class Conversation:
     def __init__(self, text):
         self._turn = Turn.AGENT
         self._log = [text]
         self._closed = False
         self._plugin = None
-        self.data = {}
+        self.data = Store()
 
     @property
     def last(self):
@@ -49,7 +55,8 @@ class Conversation:
     @plugin.setter
     def plugin(self, plugin):
         if self._plugin is not None:
-            raise ValueError(self, "Conversation already associated with a plugin")
+            msg = "Conversation already associated with a plugin"
+            raise ValueError(self, msg)
 
         self._plugin = plugin
 
@@ -82,72 +89,6 @@ class Conversation:
 class Turn(enum.Enum):
     USER = 0
     AGENT = 1
-
-
-class Plugin:
-    TRIGGERS = []
-    WEIGHT = 0
-
-    def __init__(self):
-        self.triggers = [
-            re.compile(trigger, re.IGNORECASE)
-            for trigger in self.__class__.TRIGGERS]
-
-    def matches(self, text):
-        for trigger in self.triggers:
-            m = trigger.search(text)
-            if not m:
-                continue
-
-            args = ()
-            kwargs = m.groupdict()
-            if not kwargs:
-                args = m.groups()
-
-            return args, kwargs
-
-        raise TextNotMatched(text)
-
-    @abc.abstractmethod
-    def reply(self, conversation):
-        raise NotImplementedError()
-
-
-class Notes(Plugin):
-    class Stage:
-        NONE = 0
-        ANNOTATING = 1
-
-    NAME = 'notes'
-    TRIGGERS = [
-        r'^anota$',
-        r'^anota (?P<item>.+)$'
-    ]
-
-    def reply(self, conv, item=None):
-        if item:
-            conv.reply_and_close('Got your note: ' + conv.last)
-            return
-
-        stage = conv.data.get('stage', self.Stage.NONE)
-
-        if stage == self.Stage.NONE:
-            conv.reply('ok, tellme what')
-            conv.data['stage'] = self.Stage.ANNOTATING
-
-        elif stage == self.Stage.ANNOTATING:
-            conv.reply_and_close('Got your note: ' + conv.last)
-
-
-class Weather(Plugin):
-    NAME = 'weather'
-    TRIGGERS = [
-        r'^tiempo en (.+)$',
-        r'^tiempo$'
-    ]
-
-    def reply(self, conversation, *args, **kwargs):
-        conversation.reply('To be done :-)')
 
 
 class Router:
@@ -228,45 +169,3 @@ class Router:
             self.plugin = None
 
         return ret
-
-
-def main(args=None):
-    if args is None:
-        args = sys.argv[:1]
-
-    r = Router()
-    r.register(Notes())
-    r.register(Weather())
-
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument(dest='text', nargs='*')
-    args = argparser.parse_args(args)
-
-    text = ' '.join(args.text)
-    if not text:
-        text = input(r.prompt)
-
-    running = True
-    while running:
-        if not r.in_conversation and text == 'bye':
-            running = False
-            continue
-
-        try:
-            resp = r.handle(text)
-            print(resp)
-
-        except TextNotMatched:
-            print("[?] I don't how to handle that")
-            continue
-
-        except InternalError as e:
-            print("[!] Internal error: {e!r}".format(e=e.args[0]))
-            continue
-
-        finally:
-            text = input(r.prompt)
-
-
-if __name__ == '__main__':
-    main(sys.argv[1:])

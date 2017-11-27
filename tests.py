@@ -41,12 +41,12 @@ class StagedPlugin(suzie.Plugin):
 
     def reply(self, conv):
         if 'stage' not in conv.data:
-            conv.data['stage'] = 0
+            conv.data.set('stage', 0)
         if 'info' not in conv.data:
-            conv.data['info'] = []
+            conv.data.set('info', [])
 
-        stage = conv.data['stage']
-        info = conv.data['info']
+        stage = conv.data.get('stage')
+        info = conv.data.get('info')
 
         if stage == 0:
             conv.reply('request more info')
@@ -111,6 +111,7 @@ class TestSuzie(unittest.TestCase):
             'bar')
 
     def test_conversation(self):
+        self.r = suzie.Router()
         self.r.register(StagedPlugin())
         self.r.handle("let's talk")
         self.r.handle("one")
