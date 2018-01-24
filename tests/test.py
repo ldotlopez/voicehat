@@ -2,6 +2,80 @@ import unittest
 import re
 
 import suzie
+import suzie.plugins
+
+
+class SingleSlotPlugin(suzie.Plugin):
+    TRIGGERS = [
+        r'test with x as (\S+)',  # For quick execution
+        r'test',                  # Generic trigger
+    ]
+
+    STATE_SLOTS = [
+        'x'
+    ]
+
+    def extract(self, text):
+        ret = {}
+
+        m = re.search(r'\bset x as (\S+)\b', text)
+        if m:
+            ret['x'] = m.group(1)
+
+        return ret
+
+    def main(self, x):
+        msg = "Got x={}".format(x)
+        return suzie.ClosingMessage(msg)
+
+
+class MultipleSlotPlugin(suzie.Plugin):
+    TRIGGERS = [
+        r'test with x as (?P<x>\S+)( and y as (?P<y>\S+))?',
+        r'test with y as (?P<y>\S+)( and x as (?P<x>\S+))?',
+        r'test'  # Generic trigger
+    ]
+
+    STATE_SLOTS = [
+        'x',
+        'y'
+    ]
+
+    def extract(self, text):
+        ret = {}
+
+        m = re.search(r'\bset x as (\S+)\b', text)
+        if m:
+            ret['x'] = m.group(1)
+
+        m = re.search(r'\bset y as (\S+)\b', text)
+        if m:
+            ret['y'] = m.group(1)
+
+        # Strip Nones
+        ret = {k: v for (k, v) in ret.items() if v}
+        return ret
+
+    def main(self, x, y):
+        msg = "Got x={!r}, y={!r}".format(x, y)
+        return suzie.ClosingMessage(msg)
+
+
+class EchoPlugin(suzie.Plugin):
+    TRIGGERS = [
+        'echo',
+        'echo (?P<what>)'
+    ]
+    STATE_SLOTS = [
+        'what'
+    ]
+
+    def extract(self, text):
+        if text:
+            return {'what': ''.join(reversed(text))}
+
+    def main(self, what):
+        return suzie.ClosingMessage(what)
 
 
 class CommonAsserts:
@@ -35,129 +109,87 @@ class CommonAsserts:
                 isinstance(reply, suzie.InformationRequiredMessage))
 
 
-class FooBarPlugin(suzie.Plugin):
-    TRIGGERS = [r'.+']
-    STATE_SLOTS = ['foo', 'bar']
-
-    def extract(self, text):
-        m = re.search(r'\bfoo as (.+?)\b', text)
-        if m:
-            yield 'foo', m.group(1)
-
-        m = re.search(r'\bbar as (.+?)\b', text)
-        if m:
-            yield 'bar', m.group(1)
-
-    def main(self, foo, bar):
-        msg = "foo='{foo}', bar='{bar}'"
-        msg = msg.format(foo=foo, bar=bar)
-        return suzie.ClosingMessage(msg)
-
-
-class TriggersAndKeywordsPlugin(suzie.Plugin):
-    TRIGGERS = [
-        r'^say$',
-        r'^say (?P<what>.+)$',
-    ]
-    STATE_SLOTS = ['what']
-
-    def extract(self, text):
-        return {'what': text}
-
-    def main(self, what):
-        return suzie.ClosingMessage(''.join(reversed(what)))
-
-
 class TestPlugin(unittest.TestCase):
     def test_full_predicate(self):
-        plugin = FooBarPlugin()
-        state = {}
-        reply = plugin.handle('foo as 1 and bar as 2', state)
-
+        plugin = MultipleSlotPlugin()
+        reply = plugin.handle('set x as 1 and set y as 2', {})
         self.assertTrue(isinstance(reply, suzie.ClosingMessage))
 
     def test_partial_predicate(self):
-        plugin = FooBarPlugin()
-        state = {}
-        reply = plugin.handle('foo as 1', state)
-
-        self.assertTrue(isinstance(reply, suzie.InformationRequiredMessage))
-        self.assertEqual(reply.what, 'bar')
-        self.assertEqual(state, {'foo': '1'})
-
-    def test_multi_step_completion(self):
-        plugin = FooBarPlugin()
+        plugin = MultipleSlotPlugin()
         state = {}
 
-        reply = plugin.handle('foo as 1', state)
+        reply = plugin.handle('set x as 1', state)
         self.assertTrue(isinstance(reply, suzie.InformationRequiredMessage))
+        self.assertEqual(reply.what, 'y')
+        self.assertEqual(state, {'x': '1'})
 
-        reply = plugin.handle('bar as 2', state)
+    def test_multistep_predicate(self):
+        plugin = MultipleSlotPlugin()
+        state = {}
+
+        reply = plugin.handle('set x as 1', state)
+        self.assertTrue(isinstance(reply, suzie.InformationRequiredMessage))
+        self.assertEqual(reply.what, 'y')
+        self.assertEqual(state, {'x': '1'})
+
+        reply = plugin.handle('set y as 2', state)
         self.assertTrue(isinstance(reply, suzie.ClosingMessage))
+        self.assertEqual(state, {'x': '1', 'y': '2'})
 
 
 class TestConversation(unittest.TestCase, CommonAsserts):
-    def test_quick_conv(self):
+    def test_single_slot(self):
+        conv = suzie.Conversation(SingleSlotPlugin())
+        resp = conv.handle('set x as 1')
+        self.assertTrue(isinstance(resp, suzie.ClosingMessage))
+
+    def test_multiple_slot(self):
         self.assertConversation(
-            FooBarPlugin(),
-            ['set foo as 1 and bar as 2', None]
+            MultipleSlotPlugin(),
+            ['set x as 1', None,
+             'set y as 2', None]
         )
-
-    def test_multistep_conv(self):
-        self.assertConversation(
-            FooBarPlugin(),
-            ['set foo as 1', None,
-             'bar as 2', None]
-        )
-
-    def test_triggers_and_keywords_conv(self):
-        msg = 'say abc'
-
-        plugin = TriggersAndKeywordsPlugin()
-        args, kwargs = plugin.matches(msg)
-
-        conv = suzie.Conversation(plugin, state=kwargs)
-        self.assertConversation(
-            conv,
-            [msg, None])
 
 
 class TestRouter(unittest.TestCase, CommonAsserts):
-    def test_quick_conv(self):
-        router = suzie.Router(plugins=[FooBarPlugin()])
-        resp = router.handle('set foo as 1 and bar as 2')
+    def test_no_initial_state(self):
+        router = suzie.Router(plugins=[MultipleSlotPlugin()])
 
-        self.assertTrue(isinstance(resp, suzie.ClosingMessage))
-
-    def test_multistep_conv(self):
-        router = suzie.Router(plugins=[FooBarPlugin()])
-
-        resp = router.handle('set foo as 1')
+        resp = router.handle('test')
         self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
 
-        resp = router.handle('set bar as 2')
+        resp = router.handle('set x as 1')
+        self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+
+        resp = router.handle('set y as 2')
         self.assertTrue(isinstance(resp, suzie.ClosingMessage))
 
-    def test_triggers_and_keywords(self):
-        router = suzie.Router(plugins=[TriggersAndKeywordsPlugin()])
+    def test_quick_dialog(self):
+        router = suzie.Router(plugins=[MultipleSlotPlugin()])
 
-        resp = router.handle('say abc')
+        resp = router.handle('test with x as 1 and y as 2')
         self.assertTrue(isinstance(resp, suzie.ClosingMessage))
 
-    def test_assert(self):
-        self.assertConversation(FooBarPlugin(), [
-            'set foo as 1', None,
-            'set bar as 2', None
-        ])
+    def test_echo(self):
+        router = suzie.Router(plugins=[EchoPlugin()])
 
-    def test_assert_2(self):
-        c = suzie.Conversation(FooBarPlugin())
-        self.assertConversation(c, [
-            'set foo as 1', None,
-        ], final=False)
+        resp = router.handle('echo')
+        self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
 
-        self.assertTrue('foo' in c.state)
-        self.assertTrue('bar' not in c.state)
+        resp = router.handle('123')
+        self.assertTrue(isinstance(resp, suzie.ClosingMessage))
+        self.assertTrue(str(resp), '321')
+
+    # Partial dialog is not well supported
+    # def test_partial_dialog(self):
+    #     router = suzie.Router(plugins=[MultipleSlotPlugin()])
+
+    #     resp = router.handle('test with y as 2')
+    #     self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+
+    #     resp = router.handle('set x as 1')
+    #     self.assertTrue(isinstance(resp, suzie.ClosingMessage))
 
 
 if __name__ == '__main__':

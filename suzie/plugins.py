@@ -16,7 +16,8 @@ class Notes(suzie.Plugin):
         return suzie.ClosingMessage(msg)
 
     def extract(self, msg):
-        return {'item': msg}
+        if msg:
+            return {'item': msg}
 
 
 class Weather(suzie.Plugin):

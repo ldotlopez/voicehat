@@ -1,7 +1,7 @@
 import collections
 import enum
 import re
-import types
+import logging
 
 
 class MessageNotMatched(Exception):
@@ -31,6 +31,7 @@ class Plugin:
     STATE_SLOTS = []
 
     def __init__(self):
+        self.logger = logging.getLogger()
         self.triggers = [
             re.compile(trigger, re.IGNORECASE)
             for trigger in self.__class__.TRIGGERS]
@@ -41,12 +42,7 @@ class Plugin:
             if not m:
                 continue
 
-            args = ()
-            kwargs = m.groupdict()
-            if not kwargs:
-                args = m.groups()
-
-            return args, kwargs
+            return m.groupdict()
 
         raise MessageNotMatched(text)
 
@@ -61,23 +57,13 @@ class Plugin:
         return InformationRequiredMessage(msg, slot)
 
     def handle(self, text, state):
-        r = self.extract(text)
+        data = self.extract(text)
+        if not isinstance(data, dict):
+            err = 'Invalid data type: ' + str(type(data))
+            self.logger.error(err)
 
-        if isinstance(r, types.GeneratorType):
-            while True:
-                try:
-                    k, v = next(r)
-                except StopIteration:
-                    break
-
-                state[k] = v
-
-        elif isinstance(r, dict):
-            state.update(r)
-
-        elif isinstance(r, tuple):
-            k, v = r
-            state[k] = v
+        else:
+            state.update(data)
 
         missing_slots = self.missing_slots(state)
         if not missing_slots:
@@ -123,13 +109,13 @@ class Conversation:
         self.log.append(message)
         _swap_turn()
 
-        if len(self.log) == 1:
-            if not self.plugin.missing_slots(self.state):
-                resp = self.plugin.main(**self.state)
-            elif not self.state:
-                resp = self.plugin.get_request(self.state)
-            else:
-                resp = self.plugin.handle(message, self.state)
+        # If it's the first we need to handle some special stuff:
+        # state can be already be fulfilled with initial state, in that case
+        # we execute directly Plugin.main(). Otherwise we pass the control to
+        # the Plugin.handle() method
+
+        if len(self.log) == 1 and not self.plugin.missing_slots(self.state):
+            resp = self.plugin.main(**self.state)
         else:
             resp = self.plugin.handle(message, self.state)
 
@@ -175,11 +161,11 @@ class Router:
 
         for plugin in plugins:
             try:
-                args, kwargs = plugin.matches(text)
+                initial_state = plugin.matches(text)
             except MessageNotMatched:
                 continue
 
-            yield plugin, args, kwargs
+            yield plugin, initial_state
 
     def get_handler(self, text):
         try:
@@ -193,10 +179,11 @@ class Router:
 
         if self.conversation is None:
             # Open a new conversation
-            plugin, args, kwargs = self.get_handler(text)
-            self.conversation = Conversation(plugin, state=kwargs)
-
-        response = self.conversation.handle(text)
+            plugin, initial_state = self.get_handler(text)
+            self.conversation = Conversation(plugin, state=initial_state)
+            response = self.conversation.handle('')
+        else:
+            response = self.conversation.handle(text)
 
         if self.conversation.closed:
             self.conversation = None
