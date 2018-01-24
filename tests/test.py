@@ -96,7 +96,7 @@ class CommonAsserts:
             reply = c.handle(user)
             if is_multi_step and idx < len(log) - 2:
                 self.assertTrue(
-                    isinstance(reply, suzie.InformationRequiredMessage))
+                    isinstance(reply, suzie.RequestMessage))
 
             if agent:
                 self.assertEqual(str(reply), agent)
@@ -106,7 +106,7 @@ class CommonAsserts:
                 isinstance(reply, suzie.ClosingMessage))
         else:
             self.assertTrue(
-                isinstance(reply, suzie.InformationRequiredMessage))
+                isinstance(reply, suzie.RequestMessage))
 
 
 class TestPlugin(unittest.TestCase):
@@ -120,7 +120,7 @@ class TestPlugin(unittest.TestCase):
         state = {}
 
         reply = plugin.handle('set x as 1', state)
-        self.assertTrue(isinstance(reply, suzie.InformationRequiredMessage))
+        self.assertTrue(isinstance(reply, suzie.RequestMessage))
         self.assertEqual(reply.what, 'y')
         self.assertEqual(state, {'x': '1'})
 
@@ -129,7 +129,7 @@ class TestPlugin(unittest.TestCase):
         state = {}
 
         reply = plugin.handle('set x as 1', state)
-        self.assertTrue(isinstance(reply, suzie.InformationRequiredMessage))
+        self.assertTrue(isinstance(reply, suzie.RequestMessage))
         self.assertEqual(reply.what, 'y')
         self.assertEqual(state, {'x': '1'})
 
@@ -157,10 +157,10 @@ class TestRouter(unittest.TestCase, CommonAsserts):
         router = suzie.Router(plugins=[MultipleSlotPlugin()])
 
         resp = router.handle('test')
-        self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+        self.assertTrue(isinstance(resp, suzie.RequestMessage))
 
         resp = router.handle('set x as 1')
-        self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+        self.assertTrue(isinstance(resp, suzie.RequestMessage))
 
         resp = router.handle('set y as 2')
         self.assertTrue(isinstance(resp, suzie.ClosingMessage))
@@ -175,7 +175,7 @@ class TestRouter(unittest.TestCase, CommonAsserts):
         router = suzie.Router(plugins=[EchoPlugin()])
 
         resp = router.handle('echo')
-        self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+        self.assertTrue(isinstance(resp, suzie.RequestMessage))
 
         resp = router.handle('123')
         self.assertTrue(isinstance(resp, suzie.ClosingMessage))
@@ -186,7 +186,7 @@ class TestRouter(unittest.TestCase, CommonAsserts):
     #     router = suzie.Router(plugins=[MultipleSlotPlugin()])
 
     #     resp = router.handle('test with y as 2')
-    #     self.assertTrue(isinstance(resp, suzie.InformationRequiredMessage))
+    #     self.assertTrue(isinstance(resp, suzie.RequestMessage))
 
     #     resp = router.handle('set x as 1')
     #     self.assertTrue(isinstance(resp, suzie.ClosingMessage))

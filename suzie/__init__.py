@@ -14,7 +14,7 @@ class Message(collections.UserString):
         super().__init__(text)
 
 
-class InformationRequiredMessage(Message):
+class RequestMessage(Message):
     def __init__(self, text, what):
         super().__init__(text)
         self.what = what
@@ -30,8 +30,9 @@ class Plugin:
     TRIGGERS = []
     STATE_SLOTS = []
 
-    def __init__(self):
-        self.logger = logging.getLogger()
+    def __init__(self, logger=None):
+        me = self.__class__.__name__.split('.')[-1]
+        self.logger = None or logging.getLogger(me)
         self.triggers = [
             re.compile(trigger, re.IGNORECASE)
             for trigger in self.__class__.TRIGGERS]
@@ -54,10 +55,10 @@ class Plugin:
         slot = missing_slots.pop()
         msg = "I need information for {slot}"
         msg = msg.format(slot=slot)
-        return InformationRequiredMessage(msg, slot)
+        return RequestMessage(msg, slot)
 
-    def handle(self, text, state):
-        data = self.extract(text)
+    def handle(self, message, state):
+        data = self.extract(str(message))
         if not isinstance(data, dict):
             err = 'Invalid data type: ' + str(type(data))
             self.logger.error(err)
@@ -94,7 +95,7 @@ class Conversation:
         def _swap_turn():
             self.turn = Turn.USER if self.turn == Turn.AGENT else Turn.AGENT
 
-        if not isinstance(message, (Message, str)):
+        if not isinstance(message, str):
             raise TypeError(message)
 
         if self.turn != Turn.USER:

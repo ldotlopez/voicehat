@@ -2,6 +2,22 @@ import suzie
 from homelib import aemet
 
 
+class Events(suzie.Plugin):
+    TRIGGERS = [
+        'añade cita'
+    ]
+    STATE_SLOTS = [
+        'about',
+        'where',
+        'when'
+    ]
+
+    def main(self, about, where, when):
+        msg = "OK. Your appointment: {when} at {where}. Subject: {about}"
+        msg = msg.format(when=when, where=where, about=about)
+        return suzie.ClosingMessage(msg)
+
+
 class Notes(suzie.Plugin):
     TRIGGERS = [
         r'^anota$',
