@@ -81,7 +81,7 @@ class Turn(enum.Enum):
 
 
 class Conversation:
-    def __init__(self, plugin, message=None, state=None):
+    def __init__(self, plugin, state=None):
         if not isinstance(plugin, Plugin):
             raise TypeError(plugin)
 
@@ -89,8 +89,6 @@ class Conversation:
         self.turn = Turn.USER  # Conversations are always initiated by user
         self.state = state or {}
         self.log = []
-        if message:
-            self.handle(message)
 
     def handle(self, message):
         def _swap_turn():
@@ -182,6 +180,7 @@ class Router:
             plugin, initial_state = self.get_handler(text)
             self.conversation = Conversation(plugin, state=initial_state)
             response = self.conversation.handle('')
+
         else:
             response = self.conversation.handle(text)
 
