@@ -90,7 +90,7 @@ class Conversation:
         self.state = state or {}
         self.log = []
 
-    def handle(self, message):
+    def handle(self, message, is_trigger=False):
         def _swap_turn():
             self.turn = Turn.USER if self.turn == Turn.AGENT else Turn.AGENT
 
@@ -112,8 +112,10 @@ class Conversation:
         # we execute directly Plugin.main(). Otherwise we pass the control to
         # the Plugin.handle() method
 
-        if len(self.log) == 1 and not self.plugin.missing_slots(self.state):
+        if not self.plugin.missing_slots(self.state):
             resp = self.plugin.main(**self.state)
+        elif is_trigger:
+            resp = self.plugin.get_request(self.state)
         else:
             resp = self.plugin.handle(message, self.state)
 
@@ -175,14 +177,15 @@ class Router:
         # Sanitize text
         text = re.subn(r'\s+', ' ', text.strip())[0]
 
+        is_trigger = False
+
         if self.conversation is None:
             # Open a new conversation
             plugin, initial_state = self.get_handler(text)
             self.conversation = Conversation(plugin, state=initial_state)
-            response = self.conversation.handle('')
+            is_trigger = True
 
-        else:
-            response = self.conversation.handle(text)
+        response = self.conversation.handle(text, is_trigger=is_trigger)
 
         if self.conversation.closed:
             self.conversation = None
