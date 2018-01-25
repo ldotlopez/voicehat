@@ -23,13 +23,13 @@ class Notes(suzie.Plugin):
         r'^anota$',
         r'^anota (?P<item>.+)$'
     ]
-    STATE_SLOTS = [
+    SLOTS = [
         'item'
     ]
 
     def main(self, item):
         msg = 'Got your note: {item}'.format(item=item)
-        return suzie.ClosingMessage(msg)
+        return msg
 
     def extract(self, msg):
         if msg:

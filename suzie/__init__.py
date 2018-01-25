@@ -1,5 +1,5 @@
+import abc
 import collections
-import enum
 import re
 import logging
 
@@ -25,10 +25,83 @@ class ClosingMessage(Message):
         super().__init__(text)
 
 
+Undefined = object()
+
+
+class State(collections.abc.MutableMapping):
+    def __init__(self, fields, *args, **kwargs):
+        self._fields = fields
+        self._m = {f: Undefined for f in self._fields}
+
+        initial = {}
+
+        if args:
+            if not isinstance(args[0], dict):
+                raise TypeError(args[0])
+            initial = args[0]
+
+        initial.update(kwargs)
+        for (k, v) in initial.items():
+            self.set(k, v)
+
+    @classmethod
+    def for_plugin(cls, plugin, *args, **kwargs):
+        return cls(plugin.SLOTS, *args, **kwargs)
+
+    def _check_key(self, key):
+        key = str(key)
+        if key not in self._fields:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        self._check_key(key)
+        return self._m[key]
+    get = __getitem__
+
+    def __setitem__(self, key, value):
+        self._check_key(key)
+        self._m[key] = value
+    set = __setitem__
+
+    def __delitem__(self, key):
+        self._check_key(key)
+        del(self._m[key])
+        self._m[key] = Undefined
+    delete = __delitem__
+
+    def __iter__(self):
+        yield from self._fields.__iter__()
+
+    def __len__(self):
+        return len(self._m)
+
+    @property
+    def ready(self):
+        return all([self.defined(x) for x in self])
+
+    def defined(self, key):
+        return self.get(key) != Undefined
+
+    @property
+    def missing(self):
+        return [key for key in self if self.get(key) == Undefined]
+
+    def __eq__(self, other):
+        return dict(self) == dict(other)
+
+    def __repr__(self):
+        items = ''.join(["{}={!r}".format(k, v) for (k, v) in self.items()])
+        repr = '<{cls} object at 0x{id} {{{items}}}>'.format(
+            cls=self.__class__.__name__,
+            id=id(self),
+            items=items)
+        return repr
+
+
 class Plugin:
     WEIGHT = 0
     TRIGGERS = []
-    STATE_SLOTS = []
+    SLOTS = []
 
     def __init__(self, logger=None):
         me = self.__class__.__name__.split('.')[-1]
@@ -47,94 +120,56 @@ class Plugin:
 
         raise MessageNotMatched(text)
 
-    def missing_slots(self, state):
-        return set(self.STATE_SLOTS) - set(state.keys())
+    @abc.abstractmethod
+    def extract(self, text):
+        raise NotImplementedError()
 
-    def get_request(self, state):
-        missing_slots = self.missing_slots(state)
-        slot = missing_slots.pop()
-        msg = "I need information for {slot}"
-        msg = msg.format(slot=slot)
-        return RequestMessage(msg, slot)
-
+    @abc.abstractmethod
     def handle(self, message, state):
-        data = self.extract(str(message))
-        if not isinstance(data, dict):
-            err = 'Invalid data type: ' + str(type(data))
-            self.logger.error(err)
+        res = self.extract(str(message))
+        if not isinstance(res, dict):
+            raise TypeError(res)
+        state.update(res)
 
-        else:
-            state.update(data)
-
-        missing_slots = self.missing_slots(state)
-        if not missing_slots:
-            return self.main(**state)
-        else:
-            return self.get_request(state)
-
+    @abc.abstractmethod
     def main(self, **kwargs):
         raise NotImplementedError()
 
 
-class Turn(enum.Enum):
-    USER = 0
-    AGENT = 1
-
-
 class Conversation:
-    def __init__(self, plugin, state=None):
-        if not isinstance(plugin, Plugin):
-            raise TypeError(plugin)
-
+    def __init__(self, plugin, state_data=None):
         self.plugin = plugin
-        self.turn = Turn.USER  # Conversations are always initiated by user
-        self.state = state or {}
         self.log = []
+        self.state = State.for_plugin(self.plugin, state_data or {})
+
+    def get_reply(self):
+        if self.state.ready:
+            return ClosingMessage(self.plugin.main(**self.state))
+        else:
+            slot = self.state.missing[0]
+            respmsg = "I need '{what}'"
+            respmsg = respmsg.format(what=slot)
+            return RequestMessage(respmsg, what=self.state.missing[0])
 
     def handle(self, message, is_trigger=False):
-        def _swap_turn():
-            self.turn = Turn.USER if self.turn == Turn.AGENT else Turn.AGENT
-
         if not isinstance(message, str):
             raise TypeError(message)
-
-        if self.turn != Turn.USER:
-            raise TypeError(self.turn)
 
         if self.closed:
             raise TypeError('closed conversation')
 
-        # Add conversation to log and change turn
         self.log.append(message)
-        _swap_turn()
+        if not is_trigger:
+            self.plugin.handle(message, self.state)
 
-        # If it's the first we need to handle some special stuff:
-        # state can be already be fulfilled with initial state, in that case
-        # we execute directly Plugin.main(). Otherwise we pass the control to
-        # the Plugin.handle() method
-
-        if not self.plugin.missing_slots(self.state):
-            resp = self.plugin.main(**self.state)
-        elif is_trigger:
-            resp = self.plugin.get_request(self.state)
-        else:
-            resp = self.plugin.handle(message, self.state)
-
+        resp = self.get_reply()
         self.log.append(resp)
-        _swap_turn()
 
         return resp
 
     @property
-    def last(self):
-        try:
-            return self.log[-1]
-        except IndexError:
-            return None
-
-    @property
     def closed(self):
-        return self.last is not None and isinstance(self.last, ClosingMessage)
+        return self.log and isinstance(self.log[-1], ClosingMessage)
 
 
 class Router:
@@ -182,8 +217,8 @@ class Router:
 
         if self.conversation is None:
             # Open a new conversation
-            plugin, initial_state = self.get_handler(text)
-            self.conversation = Conversation(plugin, state=initial_state)
+            plugin, state_data = self.get_handler(text)
+            self.conversation = Conversation(plugin, state_data=state_data)
             is_trigger = True
 
         response = self.conversation.handle(text, is_trigger=is_trigger)
