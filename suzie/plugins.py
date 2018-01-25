@@ -1,5 +1,41 @@
 import suzie
+
+
+import re
 from homelib import aemet
+
+
+class Pizza(suzie.Plugin):
+    TRIGGERS = [
+        'pizza'
+    ]
+    SLOTS = [
+        'size',
+        'when',
+        'ingredients'
+    ]
+
+    def extract_slot(self, slot, text):
+        if slot == 'size':
+            m = re.search(r'\b(grande|mediana|familiar|pequeña|normal)\b',
+                          text)
+            if m:
+                return m.group(1)
+
+        elif slot == 'when':
+            m = re.search(r'\b(asap|esta noche|ahora|en (.+) horas?)\b', text)
+            if m:
+                return m.group(1)
+
+        elif slot == 'ingredients':
+            return [x.strip() for x in text.split(',')]
+
+        raise suzie.MessageNotMatched(slot)
+
+    def main(self, size, when, ingredients):
+        return ("pizza pasta, pasta pizza !1!. "
+                "(size={}, when={}, ingredients={}".format(
+                    size, when, ingredients))
 
 
 class Events(suzie.Plugin):

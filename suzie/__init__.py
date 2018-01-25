@@ -125,10 +125,24 @@ class Plugin:
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def handle(self, message, state):
+    def extract_slot(self, slot, text):
+        raise NotImplementedError()
+
+    def handle(self, message, state, active_slot=None):
+        try:
+            res = self.extract_slot(active_slot, str(message))
+        except NotImplementedError:
+            pass
+        except MessageNotMatched:
+            return
+        else:
+            state.set(active_slot, res)
+            return
+
         res = self.extract(str(message))
         if not isinstance(res, dict):
             raise TypeError(res)
+
         state.update(res)
 
     @abc.abstractmethod
@@ -160,7 +174,12 @@ class Conversation:
 
         self.log.append(message)
         if not is_trigger:
-            self.plugin.handle(message, self.state)
+            try:
+                active_slot = self.log[-2].what
+            except IndexError:
+                active_slot = None
+
+            self.plugin.handle(message, self.state, active_slot=active_slot)
 
         resp = self.get_reply()
         self.log.append(resp)

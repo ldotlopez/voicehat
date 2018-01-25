@@ -12,7 +12,7 @@ def main(args=None):
 
     r = suzie.Router()
     r.register(suzie.plugins.Notes())
-    r.register(suzie.plugins.Weather())
+    r.register(suzie.plugins.Pizza())
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument(dest='text', nargs='*')
