@@ -4,6 +4,9 @@ import re
 import logging
 
 
+Undefined = object()
+
+
 class MessageNotMatched(Exception):
     pass
 
@@ -96,7 +99,6 @@ class State(collections.abc.MutableMapping):
             id=id(self),
             items=items)
         return repr
-
 
 class Plugin:
     WEIGHT = 0

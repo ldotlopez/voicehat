@@ -42,7 +42,7 @@ class Events(suzie.Plugin):
     TRIGGERS = [
         'añade cita'
     ]
-    STATE_SLOTS = [
+    SLOTS = [
         'about',
         'where',
         'when'
@@ -78,7 +78,7 @@ class Weather(suzie.Plugin):
         r"^lloverá$",
         r"^lloverá (?P<when>.+)\??$"
     ]
-    STATE_SLOTS = ['when']
+    SLOTS = ['when']
     MESSAGES = {
         'INVALID_WHEN': 'Solo hoy o mañana',
         'REQUEST_WHEN': 'Cuando, ¿hoy o mañana?',
