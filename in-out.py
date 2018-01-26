@@ -1,6 +1,7 @@
 import asyncio
 import random
 import sys
+import abc
 
 
 class Message(str):
@@ -13,6 +14,24 @@ class UserMessage(Message):
 
 class AgentMessage(Message):
     pass
+
+
+class Context:
+    def __init__(self, user_channel, handler):
+        self.user_channel = user_channel
+        self.handler = handler
+        self.log = []
+        self.busy = False
+
+
+class UserChannel:
+    @abc.abstractmethod
+    def send(self, msg):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    async def arecv(self, msg):
+        raise NotImplementedError
 
 
 class Plugin:
