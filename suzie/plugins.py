@@ -5,6 +5,24 @@ import re
 from homelib import aemet
 
 
+class Downloader(suzie.Plugin):
+    TRIGGERS = [
+        'download (?P<url>.+)',
+        'download'
+    ]
+    SLOTS = [
+        'url'
+    ]
+
+    def extract_slot(self, slot, text):
+        return text
+
+    def main(self, url):
+        msg = 'Downloading {url}'
+        msg = msg.format(url=url)
+        return msg
+
+
 class Pizza(suzie.Plugin):
     TRIGGERS = [
         'pizza'

@@ -223,5 +223,26 @@ class TestRouter(unittest.TestCase, CommonAsserts):
     #     self.assertTrue(isinstance(resp, suzie.ClosingMessage))
 
 
+class TestDownloader(unittest.TestCase, CommonAsserts):
+    def setUp(self):
+        self.r = suzie.Router()
+        self.p = suzie.plugins.Downloader()
+        self.r.register(self.p)
+
+    def test_triggers(self):
+        p, dummy = self.r.get_handler('download')
+        self.assertEqual(p, self.p)
+
+        p, slots = self.r.get_handler('download foo')
+        self.assertEqual(p, self.p)
+        self.assertEqual(slots, {'url': 'foo'})
+
+    def test_execution(self):
+        self.assertConversation(
+            suzie.plugins.Downloader(),
+            ['download http://foo.com/', None]
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
