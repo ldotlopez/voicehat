@@ -14,21 +14,23 @@ def main(args=None):
     r.register(suzie.plugins.Pizza())
     r.register(suzie.plugins.Downloader())
 
-    user = suzie.StdIO()
+    ui = suzie.CommandLineInterface()
 
     while True:
-        msg = user.recv()
+        msg = ui.recv()
 
         if not r.in_conversation and msg in ['bye', 'q']:
             break
 
         try:
-            import ipdb; ipdb.set_trace(); pass
             resp = r.handle(msg)
         except suzie.MessageNotMatched:
             resp = "[?] I don't how to handle that"
+            ui.send(resp)
+            continue
 
-        user.send(resp)
+        ui.set_conversation(r.conversation)
+        ui.send(resp)
 
 
 if __name__ == '__main__':

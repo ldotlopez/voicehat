@@ -251,7 +251,7 @@ class Router:
         return response
 
 
-class UserChannel:
+class UserInterface:
     def recv(self):
         raise NotImplementedError()
 
@@ -259,15 +259,24 @@ class UserChannel:
         raise NotImplementedError()
 
 
-class StdIO(UserChannel):
-    @property
-    def prompt(self):
-        return '> '
+class CommandLineInterface(UserInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prompt = '> '
 
     def recv(self):
         text = input(self.prompt)
         text = re.sub(r'\s+', ' ', text.strip())
         return text
 
-    def send(self, msg):
-        print(msg)
+    def send(self, message):
+        print(message)
+
+    def set_conversation(self, conversation):
+        if conversation is not None:
+            prompt = '[{plugin}] '
+            prompt = prompt.format(
+                plugin=conversation.plugin.__class__.__name__.split('.')[-1].lower())
+            self.prompt = prompt
+        else:
+            self.prompt = '> '
