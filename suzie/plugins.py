@@ -2,11 +2,10 @@ import suzie
 
 
 import re
-import sys
 from homelib import aemet
 
 
-class Downloader(suzie.Plugin):
+class Downloader(suzie.SlottedPlugin):
     TRIGGERS = [
         'download (?P<url>.+)',
         'download'
@@ -14,6 +13,9 @@ class Downloader(suzie.Plugin):
     SLOTS = [
         'url'
     ]
+
+    def validate_slot(self, slot, text):
+        return text
 
     def extract_slot(self, slot, text):
         return text
@@ -24,7 +26,7 @@ class Downloader(suzie.Plugin):
         return msg
 
 
-class Pizza(suzie.Plugin):
+class Pizza(suzie.SlottedPlugin):
     TRIGGERS = [
         'pizza'
     ]
@@ -33,6 +35,9 @@ class Pizza(suzie.Plugin):
         'when',
         'ingredients'
     ]
+
+    def validate_slot(self, slot, text):
+        return text
 
     def extract_slot(self, slot, text):
         if slot == 'size':
@@ -48,8 +53,6 @@ class Pizza(suzie.Plugin):
 
         elif slot == 'ingredients':
             return [x.strip() for x in text.split(',')]
-
-        raise suzie.MessageNotMatched(slot)
 
     def main(self, size, when, ingredients):
         return ("pizza pasta, pasta pizza !1!. "
@@ -73,25 +76,7 @@ class Events(suzie.Plugin):
         return suzie.ClosingMessage(msg)
 
 
-class Notes(suzie.Plugin):
-    TRIGGERS = [
-        r'^anota$',
-        r'^anota (?P<item>.+)$'
-    ]
-    SLOTS = [
-        'item'
-    ]
-
-    def main(self, item):
-        msg = 'Got your note: {item}'.format(item=item)
-        return msg
-
-    def extract(self, msg):
-        if msg:
-            return {'item': msg}
-
-
-class Notes2(suzie.SlottedPlugin):
+class Notes(suzie.SlottedPlugin):
     TRIGGERS = [
         r'^anota (?P<item>.+)$',
         r'^anota$',
@@ -101,19 +86,41 @@ class Notes2(suzie.SlottedPlugin):
     ]
 
     def validate_slot(self, slot, text):
-        dbg = 'Validate {slot} with {text}'
-        dbg = dbg.format(slot=slot, text=text)
-        print(dbg, file=sys.stderr)
+        # dbg = 'Validate {slot} with {text}'
+        # dbg = dbg.format(slot=slot, text=text)
+        # print(dbg, file=sys.stderr)
         return text
 
     def extract_slot(self, slot, text):
-        dbg = 'Extract {slot} from {text}'
-        dbg = dbg.format(slot=slot, text=text)
-        print(dbg, file=sys.stderr)
+        # dbg = 'Extract {slot} from {text}'
+        # dbg = dbg.format(slot=slot, text=text)
+        # print(dbg, file=sys.stderr)
         return text
 
     def main(self, item):
         msg = 'Got your note: {item}'.format(item=item)
+        return msg
+
+
+class Addition(suzie.SlottedPlugin):
+    TRIGGERS = [
+        r'^(?P<x>\d+)\s*(and|\+)\s*(?P<y>\d+)$',
+        r'^add$'
+    ]
+    SLOTS = ['x', 'y']
+
+    def validate_slot(self, slot, value):
+        try:
+            return int(value)
+        except (ValueError, TypeError) as e:
+            raise ValueError(value) from e
+
+    def extract_slot(self, slot, text):
+        return text
+
+    def main(self, x, y):
+        msg = "{x} + {y} = {z}"
+        msg = msg.format(x=x, y=y, z=x+y)
         return msg
 
 

@@ -10,9 +10,10 @@ def main(args=None):
         args = sys.argv[:1]
 
     r = suzie.Router()
-    r.register(suzie.plugins.Notes2())
-    # r.register(suzie.plugins.Pizza())
-    # r.register(suzie.plugins.Downloader())
+    r.register(suzie.plugins.Notes())
+    r.register(suzie.plugins.Addition())
+    r.register(suzie.plugins.Pizza())
+    r.register(suzie.plugins.Downloader())
 
     ui = suzie.CommandLineInterface()
 

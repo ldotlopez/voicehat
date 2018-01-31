@@ -6,7 +6,8 @@ import logging
 from . import exc
 
 
-Undefined = object()
+ACTIVE_SLOT = 'slots.active-slot'
+SLOTS_PREFIX = 'slots.slot-'
 
 
 class Message(collections.UserString):
@@ -24,9 +25,6 @@ class RequestMessage(Message):
 class ClosingMessage(Message):
     def __init__(self, text='Done!'):
         super().__init__(text)
-
-
-Undefined = object()
 
 
 class Slots(collections.abc.MutableMapping):
@@ -126,38 +124,14 @@ class Plugin:
 
         raise exc.MessageNotMatched(text)
 
-    def setup(self, **params):
+    def setup(self, memory, **params):
         pass
 
-    @abc.abstractmethod
-    def extract(self, text):
+    def handle(self, memory, message):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def extract_slot(self, slot, text):
-        raise NotImplementedError()
-
-    def handle(self, message, state, active_slot=None):
-        raise NotImplementedError()
-
-        try:
-            res = self.extract_slot(active_slot, str(message))
-        except NotImplementedError:
-            pass
-        except exc.MessageNotMatched:
-            return
-        else:
-            state.set(active_slot, res)
-            return
-
-        res = self.extract(str(message))
-        if not isinstance(res, dict):
-            raise TypeError(res)
-
-        state.update(res)
-
-    @abc.abstractmethod
-    def main(self, **kwargs):
+    def main(self, memory, **kwargs):
         raise NotImplementedError()
 
 
@@ -171,8 +145,12 @@ class SlottedPlugin(Plugin):
             errmsg = "No slots defined"
             raise TypeError(errmsg)
 
-        self._active_slot = None
-        self._slots = {}
+    def setup(self, memory, **params):
+        for (slot, value) in params.items():
+            try:
+                self.fill_slot(memory, slot, value)
+            except exc.SlotFilingError:
+                pass
 
     def matches(self, text):
         for trigger in self.triggers:
@@ -192,19 +170,42 @@ class SlottedPlugin(Plugin):
     def extract_slot(self, slot, text):
         raise NotImplementedError()
 
-    def handle(self, message):
-        if self._active_slot:
-            value = self.extract_slot(self._active_slot, str(message))
-            value = self.validate_slot(self._active_slot, value)
-            self._slots[self._active_slot] = value
+    def fill_slot(self, memory, slot, message):
+        value = self.extract_slot(slot, str(message))
+        if not value:
+            raise exc.SlotFilingError(slot, message)
 
-        missing = set(self.SLOTS) - set(self._slots.keys())
+        try:
+            value = self.validate_slot(slot, value)
+        except ValueError as e:
+            errmsg = "Invalid value '{value}' for slot '{slot}'"
+            errmsg = errmsg.format(value=value, slot=slot)
+            raise exc.SlotFilingError(slot, message, errmsg) from e
+
+        memory[SLOTS_PREFIX + slot] = value
+
+    def handle(self, memory, message):
+        def _get_slots():
+            n = len(SLOTS_PREFIX)
+            return {
+                k[n:]: v for (k, v)
+                in memory.items()
+                if k.startswith(SLOTS_PREFIX)}
+
+        slot = memory.get(ACTIVE_SLOT)
+        if slot is not None:
+            try:
+                self.fill_slot(memory, slot, message)
+            except exc.SlotFilingError:
+                pass
+
+        missing = set(self.SLOTS) - set(_get_slots().keys())
         if not missing:
-            return ClosingMessage(self.main(**self._slots))
+            return ClosingMessage(self.main(**_get_slots()))
 
         else:
-            self._active_slot = missing.pop()
-            msg = "Give " + self._active_slot
+            memory[ACTIVE_SLOT] = missing.pop()
+            msg = "Give " + memory[ACTIVE_SLOT]
             return Message(msg)
 
     @abc.abstractmethod
@@ -216,45 +217,21 @@ class Conversation:
     def __init__(self, plugin, **init_params):
         self.plugin = plugin
         self.log = []
+        self.memory = {}
 
         # FIXME: For now we use Plugin.setup but in the future we have
         # to instantiate the Plugin on demand, so init_params will be
         # passed to Plugin.__init__
-        plugin.setup(**init_params)
-
-    def handle(self, message, is_trigger=False):
-        if not isinstance(message, str):
-            raise TypeError(message)
-
-        if self.closed:
-            raise TypeError('closed conversation')
-
-        self.log.append(message)
-        if not is_trigger:
-            resp = self.plugin.handle(message)
-
-        self.log.append(resp)
-        return resp
+        plugin.setup(self.memory, **init_params)
 
     @property
-    def closed(self):
-        return self.log and isinstance(self.log[-1], ClosingMessage)
-
-
-class Conversation__Does_Too_Much:
-    def __init__(self, plugin, slots_data=None):
-        self.plugin = plugin
-        self.log = []
-        self.slots = Slots.for_plugin(self.plugin, slots_data or {})
-
-    def get_reply(self):
-        if self.slots.ready:
-            return ClosingMessage(self.plugin.main(**self.slots))
-        else:
-            slot = self.slots.missing[0]
-            respmsg = "I need '{what}'"
-            respmsg = respmsg.format(what=slot)
-            return RequestMessage(respmsg, what=self.slots.missing[0])
+    def slots(self):
+        prefix = 'slot.'
+        n = len(prefix)
+        return {
+            k[n:]: v for (k, v)
+            in self.memory.items()
+            if k.startswith(prefix)}
 
     def handle(self, message, is_trigger=False):
         if not isinstance(message, str):
@@ -265,16 +242,9 @@ class Conversation__Does_Too_Much:
 
         self.log.append(message)
         if not is_trigger:
-            try:
-                active_slot = self.log[-2].what
-            except IndexError:
-                active_slot = None
+            resp = self.plugin.handle(self.memory, message)
 
-            self.plugin.handle(message, self.slots, active_slot=active_slot)
-
-        resp = self.get_reply()
         self.log.append(resp)
-
         return resp
 
     @property
