@@ -252,11 +252,17 @@ class Router:
 
 
 class UserInterface:
+    @abc.abstractmethod
     def recv(self):
         raise NotImplementedError()
 
+    @abc.abstractmethod
     def send(self, message):
         raise NotImplementedError()
+
+    @abc.abstractmethod
+    def set_conversation(self, conversation):
+        raise NotImplementedError
 
 
 class CommandLineInterface(UserInterface):
