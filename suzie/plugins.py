@@ -2,6 +2,7 @@ import suzie
 
 
 import re
+import sys
 from homelib import aemet
 
 
@@ -88,6 +89,32 @@ class Notes(suzie.Plugin):
     def extract(self, msg):
         if msg:
             return {'item': msg}
+
+
+class Notes2(suzie.SlottedPlugin):
+    TRIGGERS = [
+        r'^anota (?P<item>.+)$',
+        r'^anota$',
+    ]
+    SLOTS = [
+        'item'
+    ]
+
+    def validate_slot(self, slot, text):
+        dbg = 'Validate {slot} with {text}'
+        dbg = dbg.format(slot=slot, text=text)
+        print(dbg, file=sys.stderr)
+        return text
+
+    def extract_slot(self, slot, text):
+        dbg = 'Extract {slot} from {text}'
+        dbg = dbg.format(slot=slot, text=text)
+        print(dbg, file=sys.stderr)
+        return text
+
+    def main(self, item):
+        msg = 'Got your note: {item}'.format(item=item)
+        return msg
 
 
 class Weather(suzie.Plugin):

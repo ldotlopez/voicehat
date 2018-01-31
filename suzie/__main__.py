@@ -10,16 +10,16 @@ def main(args=None):
         args = sys.argv[:1]
 
     r = suzie.Router()
-    r.register(suzie.plugins.Notes())
-    r.register(suzie.plugins.Pizza())
-    r.register(suzie.plugins.Downloader())
+    r.register(suzie.plugins.Notes2())
+    # r.register(suzie.plugins.Pizza())
+    # r.register(suzie.plugins.Downloader())
 
     ui = suzie.CommandLineInterface()
 
     while True:
         msg = ui.recv()
 
-        if not r.in_conversation and msg in ['bye', 'q']:
+        if r.conversation is None and msg in ['bye', 'q']:
             break
 
         try:

@@ -105,11 +105,16 @@ class Plugin:
     SLOTS = []
 
     def __init__(self, logger=None):
-        me = self.__class__.__name__.split('.')[-1]
-        self.logger = None or logging.getLogger(me)
+        if not self.TRIGGERS:
+            errmsg = "No triggers defined"
+            raise TypeError(errmsg)
+
         self.triggers = [
             re.compile(trigger, re.IGNORECASE)
             for trigger in self.__class__.TRIGGERS]
+
+        me = self.__class__.__name__.split('.')[-1]
+        self.logger = None or logging.getLogger(me)
 
     def matches(self, text):
         for trigger in self.triggers:
@@ -121,6 +126,9 @@ class Plugin:
 
         raise exc.MessageNotMatched(text)
 
+    def setup(self, **params):
+        pass
+
     @abc.abstractmethod
     def extract(self, text):
         raise NotImplementedError()
@@ -130,11 +138,13 @@ class Plugin:
         raise NotImplementedError()
 
     def handle(self, message, state, active_slot=None):
+        raise NotImplementedError()
+
         try:
             res = self.extract_slot(active_slot, str(message))
         except NotImplementedError:
             pass
-        except MessageNotMatched:
+        except exc.MessageNotMatched:
             return
         else:
             state.set(active_slot, res)
@@ -151,7 +161,87 @@ class Plugin:
         raise NotImplementedError()
 
 
+class SlottedPlugin(Plugin):
+    SLOTS = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if not self.SLOTS:
+            errmsg = "No slots defined"
+            raise TypeError(errmsg)
+
+        self._active_slot = None
+        self._slots = {}
+
+    def matches(self, text):
+        for trigger in self.triggers:
+            m = trigger.search(text)
+            if not m:
+                continue
+
+            return m.groupdict()
+
+        raise exc.MessageNotMatched(text)
+
+    @abc.abstractmethod
+    def validate_slot(self, slot, value):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def extract_slot(self, slot, text):
+        raise NotImplementedError()
+
+    def handle(self, message):
+        if self._active_slot:
+            value = self.extract_slot(self._active_slot, str(message))
+            value = self.validate_slot(self._active_slot, value)
+            self._slots[self._active_slot] = value
+
+        missing = set(self.SLOTS) - set(self._slots.keys())
+        if not missing:
+            return ClosingMessage(self.main(**self._slots))
+
+        else:
+            self._active_slot = missing.pop()
+            msg = "Give " + self._active_slot
+            return Message(msg)
+
+    @abc.abstractmethod
+    def main(self, **kwargs):
+        raise NotImplementedError()
+
+
 class Conversation:
+    def __init__(self, plugin, **init_params):
+        self.plugin = plugin
+        self.log = []
+
+        # FIXME: For now we use Plugin.setup but in the future we have
+        # to instantiate the Plugin on demand, so init_params will be
+        # passed to Plugin.__init__
+        plugin.setup(**init_params)
+
+    def handle(self, message, is_trigger=False):
+        if not isinstance(message, str):
+            raise TypeError(message)
+
+        if self.closed:
+            raise TypeError('closed conversation')
+
+        self.log.append(message)
+        if not is_trigger:
+            resp = self.plugin.handle(message)
+
+        self.log.append(resp)
+        return resp
+
+    @property
+    def closed(self):
+        return self.log and isinstance(self.log[-1], ClosingMessage)
+
+
+class Conversation__Does_Too_Much:
     def __init__(self, plugin, slots_data=None):
         self.plugin = plugin
         self.log = []
@@ -198,17 +288,6 @@ class Router:
         self.registry = set(plugins)
         self.conversation = None
 
-    @property
-    def prompt(self):
-        if self.conversation is None:
-            return '> '
-        else:
-            return '[' + self.conversation.plugin.__class__.__name__ + '] '
-
-    @property
-    def in_conversation(self):
-        return self.conversation and not self.conversation.closed
-
     def register(self, plugin):
         self.registry.add(plugin)
 
@@ -217,11 +296,11 @@ class Router:
 
         for plugin in plugins:
             try:
-                initial_state = plugin.matches(text)
+                init_params = plugin.matches(text)
             except exc.MessageNotMatched:
                 continue
 
-            yield plugin, initial_state
+            yield plugin, init_params
 
     def get_handler(self, text):
         try:
@@ -236,13 +315,10 @@ class Router:
         is_trigger = False
 
         if self.conversation is None:
-            # Open a new conversation
-            plugin, slots_data = self.get_handler(text)
-            self.conversation = Conversation(plugin, slots_data=slots_data)
-            is_trigger = True
+            plugin, init_params = self.get_handler(text)
+            self.conversation = Conversation(plugin, **init_params)
 
         response = self.conversation.handle(text, is_trigger=is_trigger)
-
         if self.conversation.closed:
             self.conversation = None
 
