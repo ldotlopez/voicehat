@@ -275,8 +275,9 @@ class CommandLineInterface(UserInterface):
     def set_conversation(self, conversation):
         if conversation is not None:
             prompt = '[{plugin}] '
-            prompt = prompt.format(
-                plugin=conversation.plugin.__class__.__name__.split('.')[-1].lower())
+            plugin_cls = conversation.plugin.__class__
+            humanized_cls = plugin_cls.__name__.split('.')[-1].lower()
+            prompt = prompt.format(plugin=humanized_cls)
             self.prompt = prompt
         else:
             self.prompt = '> '
