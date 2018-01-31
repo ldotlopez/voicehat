@@ -31,7 +31,7 @@ class ClosingMessage(Message):
 Undefined = object()
 
 
-class State(collections.abc.MutableMapping):
+class Slots(collections.abc.MutableMapping):
     def __init__(self, fields, *args, **kwargs):
         self._fields = fields
         self._m = {f: Undefined for f in self._fields}
@@ -100,6 +100,7 @@ class State(collections.abc.MutableMapping):
             items=items)
         return repr
 
+
 class Plugin:
     WEIGHT = 0
     TRIGGERS = []
@@ -153,19 +154,19 @@ class Plugin:
 
 
 class Conversation:
-    def __init__(self, plugin, state_data=None):
+    def __init__(self, plugin, slots_data=None):
         self.plugin = plugin
         self.log = []
-        self.state = State.for_plugin(self.plugin, state_data or {})
+        self.slots = Slots.for_plugin(self.plugin, slots_data or {})
 
     def get_reply(self):
-        if self.state.ready:
-            return ClosingMessage(self.plugin.main(**self.state))
+        if self.slots.ready:
+            return ClosingMessage(self.plugin.main(**self.slots))
         else:
-            slot = self.state.missing[0]
+            slot = self.slots.missing[0]
             respmsg = "I need '{what}'"
             respmsg = respmsg.format(what=slot)
-            return RequestMessage(respmsg, what=self.state.missing[0])
+            return RequestMessage(respmsg, what=self.slots.missing[0])
 
     def handle(self, message, is_trigger=False):
         if not isinstance(message, str):
@@ -181,7 +182,7 @@ class Conversation:
             except IndexError:
                 active_slot = None
 
-            self.plugin.handle(message, self.state, active_slot=active_slot)
+            self.plugin.handle(message, self.slots, active_slot=active_slot)
 
         resp = self.get_reply()
         self.log.append(resp)
@@ -238,8 +239,8 @@ class Router:
 
         if self.conversation is None:
             # Open a new conversation
-            plugin, state_data = self.get_handler(text)
-            self.conversation = Conversation(plugin, state_data=state_data)
+            plugin, slots_data = self.get_handler(text)
+            self.conversation = Conversation(plugin, slots_data=slots_data)
             is_trigger = True
 
         response = self.conversation.handle(text, is_trigger=is_trigger)
@@ -248,3 +249,25 @@ class Router:
             self.conversation = None
 
         return response
+
+
+class UserChannel:
+    def recv(self):
+        raise NotImplementedError()
+
+    def send(self, message):
+        raise NotImplementedError()
+
+
+class StdIO(UserChannel):
+    @property
+    def prompt(self):
+        return '> '
+
+    def recv(self):
+        text = input(self.prompt)
+        text = re.sub(r'\s+', ' ', text.strip())
+        return text
+
+    def send(self, msg):
+        print(msg)

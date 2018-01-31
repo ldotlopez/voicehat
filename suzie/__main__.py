@@ -1,4 +1,3 @@
-import argparse
 import sys
 
 
@@ -13,31 +12,23 @@ def main(args=None):
     r = suzie.Router()
     r.register(suzie.plugins.Notes())
     r.register(suzie.plugins.Pizza())
+    r.register(suzie.plugins.Downloader())
 
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument(dest='text', nargs='*')
-    args = argparser.parse_args(args)
+    user = suzie.StdIO()
 
-    text = ' '.join(args.text)
-    if not text:
-        text = input(r.prompt)
+    while True:
+        msg = user.recv()
 
-    running = True
-    while running:
-        if not r.in_conversation and text == 'bye':
-            running = False
-            continue
+        if not r.in_conversation and msg in ['bye', 'q']:
+            break
 
         try:
-            resp = r.handle(text)
-            print(resp)
-
+            import ipdb; ipdb.set_trace(); pass
+            resp = r.handle(msg)
         except suzie.MessageNotMatched:
-            print("[?] I don't how to handle that")
-            continue
+            resp = "[?] I don't how to handle that"
 
-        finally:
-            text = input(r.prompt)
+        user.send(resp)
 
 
 if __name__ == '__main__':

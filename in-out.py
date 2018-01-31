@@ -1,5 +1,6 @@
 import asyncio
 import random
+import itertools
 import sys
 import abc
 
@@ -59,17 +60,17 @@ class SlotFillingMixin:
 class RandomPush(Plugin, PushMixin, ExecutorMixin):
     NAME = 'push'
 
-    def __init__(self, prefix='', *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.prefix = prefix
+        self.msg_tpl = "Event #{i}"
 
     async def main(self, loop):
-        msg = 'event {prefix}::{i}'
-        i = 0
-        while True:
-            await asyncio.sleep(random.randint(0, 10) / 10)
-            yield AgentMessage(msg.format(prefix=self.prefix, i=i))
-            i = i + 1
+        for i in itertools.count():
+            t = random.randint(0, 10) / 10
+            await asyncio.sleep(t)
+
+            msg = self.msg_tpl.format(i=i)
+            yield AgentMessage(msg)
 
     def execute(self):
         return AgentMessage('Hello!')
@@ -134,6 +135,6 @@ class App:
 
 app = App(plugins=[
     Stdin(),
-    RandomPush(prefix='x'),
+    RandomPush(),
 ])
 app.main()

@@ -109,38 +109,38 @@ class CommonAsserts:
                 isinstance(reply, suzie.RequestMessage))
 
 
-class TestState(unittest.TestCase):
+class TestSlots(unittest.TestCase):
     def test_constructor_with_args(self):
-        s = suzie.State(['x'], dict(x=1))
+        s = suzie.Slots(['x'], dict(x=1))
         self.assertTrue(s.get('x'), 1)
 
     def test_constructor_with_kwargs(self):
-        s = suzie.State(['x'], x=1)
+        s = suzie.Slots(['x'], x=1)
         self.assertTrue(s.get('x'), 1)
 
     def test_constructor_with_args_and_kwargs(self):
-        s = suzie.State(['x', 'y', 'z'], dict(x=1, y=0), y=2, z=3)
+        s = suzie.Slots(['x', 'y', 'z'], dict(x=1, y=0), y=2, z=3)
         self.assertEqual(s, dict(x=1, y=2, z=3))
 
     def test_ready(self):
-        s = suzie.State(['x', 'y'], {'x': 1})
+        s = suzie.Slots(['x', 'y'], {'x': 1})
         self.assertFalse(s.ready)
 
-        s = suzie.State(['x', 'y'], x=1, y=2)
+        s = suzie.Slots(['x', 'y'], x=1, y=2)
         self.assertTrue(s.ready)
 
 
 class TestPlugin(unittest.TestCase):
     def test_full_predicate(self):
         plugin = MultipleSlotPlugin()
-        state = suzie.State.for_plugin(plugin)
+        state = suzie.Slots.for_plugin(plugin)
 
         plugin.handle('set x as foo and set y as bar', state)
         self.assertEqual(state, dict(x='foo', y='bar'))
 
     def test_partial_predicate(self):
         plugin = MultipleSlotPlugin()
-        state = suzie.State.for_plugin(plugin)
+        state = suzie.Slots.for_plugin(plugin)
 
         plugin.handle('set x as foo', state)
         self.assertEqual(state.get('x'), 'foo')
@@ -148,7 +148,7 @@ class TestPlugin(unittest.TestCase):
 
     def test_multistep_predicate(self):
         plugin = MultipleSlotPlugin()
-        state = suzie.State.for_plugin(plugin)
+        state = suzie.Slots.for_plugin(plugin)
 
         plugin.handle('set x as foo', state)
         self.assertEqual(state.get('x'), 'foo')
@@ -160,8 +160,8 @@ class TestPlugin(unittest.TestCase):
 
 class TestConversation(unittest.TestCase, CommonAsserts):
     def test_conv_with_initial_data(self):
-        conv = suzie.Conversation(SingleSlotPlugin(), state_data=dict(x='1'))
-        self.assertTrue(conv.state.get('x'), '1')
+        conv = suzie.Conversation(SingleSlotPlugin(), slots_data=dict(x='1'))
+        self.assertTrue(conv.slots.get('x'), '1')
 
     def test_single_slot(self):
         self.assertConversation(
