@@ -3,12 +3,10 @@ import collections
 import re
 import logging
 
+from . import exc
+
 
 Undefined = object()
-
-
-class MessageNotMatched(Exception):
-    pass
 
 
 class Message(collections.UserString):
@@ -121,7 +119,7 @@ class Plugin:
 
             return m.groupdict()
 
-        raise MessageNotMatched(text)
+        raise exc.MessageNotMatched(text)
 
     @abc.abstractmethod
     def extract(self, text):
@@ -220,7 +218,7 @@ class Router:
         for plugin in plugins:
             try:
                 initial_state = plugin.matches(text)
-            except MessageNotMatched:
+            except exc.MessageNotMatched:
                 continue
 
             yield plugin, initial_state
@@ -229,7 +227,7 @@ class Router:
         try:
             return next(self.get_handlers(text))
         except StopIteration:
-            raise MessageNotMatched(text)
+            raise exc.MessageNotMatched(text)
 
     def handle(self, text):
         # Sanitize text

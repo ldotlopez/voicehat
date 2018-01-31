@@ -24,7 +24,7 @@ def main(args=None):
 
         try:
             resp = r.handle(msg)
-        except suzie.MessageNotMatched:
+        except suzie.exc.MessageNotMatched:
             resp = "[?] I don't how to handle that"
             ui.send(resp)
             continue
