@@ -9,29 +9,14 @@ def main(args=None):
     if args is None:
         args = sys.argv[:1]
 
-    r = suzie.Router()
+    ui = suzie.CommandLineInterface()
+
+    r = suzie.Router(ui)
     r.register(suzie.plugins.Notes())
     r.register(suzie.plugins.Addition())
     r.register(suzie.plugins.Pizza())
     r.register(suzie.plugins.Downloader())
-
-    ui = suzie.CommandLineInterface()
-
-    while True:
-        msg = ui.recv()
-
-        if r.conversation is None and msg in ['bye', 'q']:
-            break
-
-        try:
-            resp = r.handle(msg)
-        except suzie.exc.MessageNotMatched:
-            resp = "[?] I don't how to handle that"
-            ui.send(resp)
-            continue
-
-        ui.set_conversation(r.conversation)
-        ui.send(resp)
+    r.main()
 
 
 if __name__ == '__main__':

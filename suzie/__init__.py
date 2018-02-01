@@ -1,7 +1,9 @@
 import abc
+import asyncio
 import collections
-import re
 import logging
+import re
+import sys
 
 from . import exc
 
@@ -183,10 +185,33 @@ class Conversation:
 
 
 class Router:
-    def __init__(self, plugins=None):
+    def __init__(self, ui, plugins=None):
         plugins = plugins or []
         self.registry = set(plugins)
         self.conversation = None
+        self.ui = ui
+
+    def main(self):
+        self.loop = asyncio.get_event_loop()
+        self.loop.create_task(self._main())
+        self.loop.run_forever()
+
+    async def _main(self):
+        while True:
+            msg = await self.ui.recv()
+            if self.conversation is None and msg in ['bye', 'q']:
+                self.loop.stop()
+                break
+
+            try:
+                resp = self.handle(msg)
+            except exc.MessageNotMatched:
+                resp = "[?] I don't how to handle that"
+                self.ui.send(resp)
+                break
+
+            self.ui.set_conversation(self.conversation)
+            await self.ui.send(resp)
 
     def register(self, plugin):
         self.registry.add(plugin)
@@ -227,11 +252,11 @@ class Router:
 
 class UserInterface:
     @abc.abstractmethod
-    def recv(self):
+    async def recv(self):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def send(self, message):
+    async def send(self, message):
         raise NotImplementedError()
 
     @abc.abstractmethod
@@ -244,12 +269,13 @@ class CommandLineInterface(UserInterface):
         super().__init__(*args, **kwargs)
         self.prompt = '> '
 
-    def recv(self):
-        text = input(self.prompt)
-        text = re.sub(r'\s+', ' ', text.strip())
-        return text
+    async def recv(self):
+        loop = asyncio.get_event_loop()
+        line = await loop.run_in_executor(None, input, self.prompt)
+        line = line.strip()
+        return line
 
-    def send(self, message):
+    async def send(self, message):
         print(message)
 
     def set_conversation(self, conversation):
