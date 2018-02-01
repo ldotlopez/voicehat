@@ -3,7 +3,7 @@ import asyncio
 import collections
 import logging
 import re
-import sys
+
 
 from . import exc
 
@@ -155,15 +155,6 @@ class Conversation:
         # to instantiate the Plugin on demand, so init_params will be
         # passed to Plugin.__init__
         plugin.setup(self.memory, **init_params)
-
-    @property
-    def slots(self):
-        prefix = 'slot.'
-        n = len(prefix)
-        return {
-            k[n:]: v for (k, v)
-            in self.memory.items()
-            if k.startswith(prefix)}
 
     def handle(self, message, is_trigger=False):
         if not isinstance(message, str):
