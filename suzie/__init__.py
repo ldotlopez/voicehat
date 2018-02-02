@@ -33,7 +33,7 @@ class Plugin:
     TRIGGERS = []
     SLOTS = []
 
-    def __init__(self, comms_api, logger=None):
+    def __init__(self, bridge, logger=None):
         if not self.TRIGGERS:
             errmsg = "No triggers defined"
             raise TypeError(errmsg)
@@ -44,7 +44,7 @@ class Plugin:
 
         me = self.__class__.__name__.split('.')[-1]
 
-        self.comms_api = comms_api
+        self.bridge = bridge
         self.logger = None or logging.getLogger(me)
 
     def matches(self, text):
@@ -147,7 +147,7 @@ class SlottedPlugin(Plugin):
 
 
 class Conversation:
-    def __init__(self, comms_api, plugin, **init_params):
+    def __init__(self, plugin, **init_params):
         self.plugin = plugin
         self.log = []
         self.memory = {}
@@ -176,9 +176,20 @@ class Conversation:
         return self.log and isinstance(self.log[-1], ClosingMessage)
 
 
+class BridgeAPI:
+    def __init__(self, push_queue, loop=None):
+        self._loop = loop or asyncio.get_event_loop()
+        self._push_queue = push_queue
+
+    def create_task(self, coro):
+        return self._loop.create_task(coro)
+
+    def push_message(self, message):
+        self._push_queue.put_nowait(message)
+
+
 class Router:
     def __init__(self, ui, plugins=None):
-        CommsAPI = collections.namedtuple('CommsAPI', ['loop', 'queue'])
 
         plugins = plugins or []
         self.registry = set(plugins)
@@ -186,10 +197,11 @@ class Router:
         self.conversation = None
         self.loop = asyncio.get_event_loop()
         self.queue = asyncio.Queue()
-        self.comms_api = CommsAPI(loop=self.loop, queue=self.queue)
+
+        self.bridge = BridgeAPI(push_queue=self.queue, loop=self.loop)
 
     def load(self, plugin_cls):
-        self.register(plugin_cls(self.comms_api))
+        self.register(plugin_cls(self.bridge))
 
     def register(self, plugin):
         self.registry.add(plugin)
@@ -219,8 +231,7 @@ class Router:
 
         if self.conversation is None:
             plugin, init_params = self.get_handler(text)
-            self.conversation = Conversation(self.comms_api, plugin,
-                                             **init_params)
+            self.conversation = Conversation(plugin, **init_params)
 
         response = self.conversation.handle(text, is_trigger=is_trigger)
         if self.conversation.closed:

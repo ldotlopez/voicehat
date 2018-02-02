@@ -22,10 +22,10 @@ class Alarm(suzie.SlottedPlugin):
 
     async def _timer(self, secs):
         await asyncio.sleep(secs)
-        await self.comms_api.queue.put('Wakeup after ' + str(secs))
+        self.bridge.push_message('Wakeup after ' + str(secs))
 
     def main(self, secs):
-        self.comms_api.loop.create_task(self._timer(secs))
+        self.bridge.create_task(self._timer(secs))
         return 'OK. I will beep in {}'.format(secs)
 
 
