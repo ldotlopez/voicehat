@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import collections
 import re
 import logging
@@ -32,7 +33,7 @@ class Plugin:
     TRIGGERS = []
     SLOTS = []
 
-    def __init__(self, logger=None):
+    def __init__(self, comms_api, logger=None):
         if not self.TRIGGERS:
             errmsg = "No triggers defined"
             raise TypeError(errmsg)
@@ -42,6 +43,8 @@ class Plugin:
             for trigger in self.__class__.TRIGGERS]
 
         me = self.__class__.__name__.split('.')[-1]
+
+        self.comms_api = comms_api
         self.logger = None or logging.getLogger(me)
 
     def matches(self, text):
@@ -144,7 +147,7 @@ class SlottedPlugin(Plugin):
 
 
 class Conversation:
-    def __init__(self, plugin, **init_params):
+    def __init__(self, comms_api, plugin, **init_params):
         self.plugin = plugin
         self.log = []
         self.memory = {}
@@ -153,15 +156,6 @@ class Conversation:
         # to instantiate the Plugin on demand, so init_params will be
         # passed to Plugin.__init__
         plugin.setup(self.memory, **init_params)
-
-    @property
-    def slots(self):
-        prefix = 'slot.'
-        n = len(prefix)
-        return {
-            k[n:]: v for (k, v)
-            in self.memory.items()
-            if k.startswith(prefix)}
 
     def handle(self, message, is_trigger=False):
         if not isinstance(message, str):
@@ -183,10 +177,19 @@ class Conversation:
 
 
 class Router:
-    def __init__(self, plugins=None):
+    def __init__(self, ui, plugins=None):
+        CommsAPI = collections.namedtuple('CommsAPI', ['loop', 'queue'])
+
         plugins = plugins or []
         self.registry = set(plugins)
+        self.ui = ui
         self.conversation = None
+        self.loop = asyncio.get_event_loop()
+        self.queue = asyncio.Queue()
+        self.comms_api = CommsAPI(loop=self.loop, queue=self.queue)
+
+    def load(self, plugin_cls):
+        self.register(plugin_cls(self.comms_api))
 
     def register(self, plugin):
         self.registry.add(plugin)
@@ -216,7 +219,8 @@ class Router:
 
         if self.conversation is None:
             plugin, init_params = self.get_handler(text)
-            self.conversation = Conversation(plugin, **init_params)
+            self.conversation = Conversation(self.comms_api, plugin,
+                                             **init_params)
 
         response = self.conversation.handle(text, is_trigger=is_trigger)
         if self.conversation.closed:
@@ -224,14 +228,43 @@ class Router:
 
         return response
 
+    def main(self):
+
+        async def _queue_handler():
+            while True:
+                msg = await self.queue.get()
+                print("Got msg from queue:", msg)
+
+        async def _main():
+            while True:
+                msg = await self.ui.recv()
+
+                if self.conversation is None and msg in ['bye', 'q']:
+                    self.loop.stop()
+                    break
+
+                try:
+                    resp = self.handle(msg)
+                except exc.MessageNotMatched:
+                    resp = "[?] I don't how to handle that"
+                    await self.ui.send(resp)
+                    continue
+
+                self.ui.set_conversation(self.conversation)
+                await self.ui.send(resp)
+
+        self.loop.create_task(_queue_handler())
+        self.loop.create_task(_main())
+        self.loop.run_forever()
+
 
 class UserInterface:
     @abc.abstractmethod
-    def recv(self):
+    async def recv(self):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def send(self, message):
+    async def send(self, message):
         raise NotImplementedError()
 
     @abc.abstractmethod
@@ -244,13 +277,15 @@ class CommandLineInterface(UserInterface):
         super().__init__(*args, **kwargs)
         self.prompt = '> '
 
-    def recv(self):
-        text = input(self.prompt)
+    async def recv(self):
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, input, self.prompt)
         text = re.sub(r'\s+', ' ', text.strip())
         return text
 
-    def send(self, message):
-        print(message)
+    async def send(self, message):
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, print, message)
 
     def set_conversation(self, conversation):
         if conversation is not None:

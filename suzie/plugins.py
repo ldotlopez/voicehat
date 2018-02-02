@@ -1,8 +1,32 @@
 import suzie
 
 
+import asyncio
 import re
 from homelib import aemet
+
+
+class Alarm(suzie.SlottedPlugin):
+    TRIGGERS = [
+        '^beep in (?P<secs>\d+)$'
+    ]
+    SLOTS = [
+        'secs'
+    ]
+
+    def extract_slot(self, slot, text):
+        return text
+
+    def validate_slot(self, slot, text):
+        return int(text)
+
+    async def _timer(self, secs):
+        await asyncio.sleep(secs)
+        await self.comms_api.queue.put('Wakeup after ' + str(secs))
+
+    def main(self, secs):
+        self.comms_api.loop.create_task(self._timer(secs))
+        return 'OK. I will beep in {}'.format(secs)
 
 
 class Downloader(suzie.SlottedPlugin):
