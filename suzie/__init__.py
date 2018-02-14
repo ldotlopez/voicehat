@@ -58,14 +58,14 @@ class Plugin:
 
         raise exc.MessageNotMatched(text)
 
-    def setup(self, memory, **params):
+    def setup(self, context, **params):
         pass
 
-    def handle(self, memory, message):
+    def handle(self, context, message):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def main(self, memory, **kwargs):
+    def main(self, context, **kwargs):
         raise NotImplementedError()
 
 
@@ -79,10 +79,10 @@ class SlottedPlugin(Plugin):
             errmsg = "No slots defined"
             raise TypeError(errmsg)
 
-    def setup(self, memory, **params):
+    def setup(self, context, **params):
         for (slot, value) in params.items():
             try:
-                self.fill_slot(memory, slot, value)
+                self.fill_slot(context.memory, slot, value)
             except exc.SlotFilingError:
                 pass
 
@@ -104,7 +104,7 @@ class SlottedPlugin(Plugin):
     def extract_slot(self, slot, text):
         raise NotImplementedError()
 
-    def fill_slot(self, ctx, slot, message):
+    def fill_slot(self, memory, slot, message):
         value = self.extract_slot(slot, str(message))
         if not value:
             raise exc.SlotFilingError(slot, message)
@@ -116,14 +116,14 @@ class SlottedPlugin(Plugin):
             errmsg = errmsg.format(value=value, slot=slot)
             raise exc.SlotFilingError(slot, message, errmsg) from e
 
-        ctx.memory[SLOTS_PREFIX + slot] = value
+        memory[SLOTS_PREFIX + slot] = value
 
-    def handle(self, ctx, message):
+    def handle(self, context, message):
         # Try to fill active slot
-        active_slot = ctx.memory.get(ACTIVE_SLOT)
+        active_slot = context.memory.get(ACTIVE_SLOT)
         if active_slot is not None:
             try:
-                self.fill_slot(ctx, active_slot, message)
+                self.fill_slot(context.memory, active_slot, message)
             except exc.SlotFilingError:
                 pass
 
@@ -131,23 +131,23 @@ class SlottedPlugin(Plugin):
         prefix_len = len(SLOTS_PREFIX)
         slots = {
             k[prefix_len:]: v for (k, v)
-            in ctx.memory.items()
+            in context.memory.items()
             if k.startswith(SLOTS_PREFIX)
         }
 
         # Check for missing slots and ask for one or run Plugin.main
         missing = set(self.SLOTS) - set(slots.keys())
         if missing:
-            ctx.memory[ACTIVE_SLOT] = missing.pop()
-            msg = "Give " + ctx.memory[ACTIVE_SLOT]
+            context.memory[ACTIVE_SLOT] = missing.pop()
+            msg = "Give " + context.memory[ACTIVE_SLOT]
             return Message(msg)
 
         else:
-            msg = self.main(ctx, **slots)
+            msg = self.main(context, **slots)
             return ClosingMessage(msg)
 
     @abc.abstractmethod
-    def main(self, ctx, **kwargs):
+    def main(self, context, **kwargs):
         raise NotImplementedError()
 
 
