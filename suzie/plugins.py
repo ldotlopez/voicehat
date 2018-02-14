@@ -6,6 +6,21 @@ import re
 from homelib import aemet
 
 
+class Ping(suzie.Plugin):
+    TRIGGERS = [
+        r'^ping$',
+        r'^echo (.+)$'
+    ]
+
+    def handle(self, context, message):
+        if message == 'ping':
+            return suzie.ClosingMessage('pong')
+
+        else:
+            usertxt = message[5:]
+            return suzie.ClosingMessage(usertxt)
+
+
 class Alarm(suzie.SlottedPlugin):
     TRIGGERS = [
         '^beep in (?P<secs>\d+)$'
