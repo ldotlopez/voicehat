@@ -17,6 +17,31 @@ class UserInterface:
         raise NotImplementedError
 
 
+class TCP(UserInterface):
+    def __init__(self, reader, writer, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reader = reader
+        self.writer = writer
+
+    async def recv(self):
+        line = await self.reader.readline()
+        line = line.decode("utf-8")
+
+        if not line:
+            raise EOFError()
+
+        line = line.strip()
+
+        return line
+
+    async def send(self, message):
+        self.writer.write((str(message) + "\n").encode('utf-8'))
+        await self.writer.drain()
+
+    def set_context(self, ctx):
+        pass
+
+
 class CommandLine(UserInterface):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

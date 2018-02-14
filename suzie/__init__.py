@@ -167,11 +167,11 @@ class Context:
 
 
 class Router:
-    def __init__(self, plugins=None):
+    def __init__(self, loop=None, plugins=None):
         plugins = plugins or []
         self._ui_tasks = {}
         self.registry = set(plugins)
-        self.loop = asyncio.get_event_loop()
+        self.loop = loop or asyncio.get_event_loop()
 
     def load(self, plugin_cls):
         self.register(plugin_cls())
