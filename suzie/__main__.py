@@ -9,12 +9,13 @@ def main(args=None):
     if args is None:
         args = sys.argv[:1]
 
-    r = suzie.Router(ui=suzie.CommandLineInterface())
+    r = suzie.Router()
     r.load(suzie.plugins.Alarm)
     r.load(suzie.plugins.Notes)
     r.load(suzie.plugins.Addition)
     r.load(suzie.plugins.Pizza)
     r.load(suzie.plugins.Downloader)
+    r.add_ui(suzie.CommandLineInterface())
     r.main()
 
     # ui = suzie.CommandLineInterface()

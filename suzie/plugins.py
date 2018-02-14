@@ -20,12 +20,12 @@ class Alarm(suzie.SlottedPlugin):
     def validate_slot(self, slot, text):
         return int(text)
 
-    async def _timer(self, secs):
+    async def _timer(self, ctx, secs):
         await asyncio.sleep(secs)
-        self.bridge.push_message('Wakeup after ' + str(secs))
+        ctx.push_message('Wakeup after ' + str(secs))
 
-    def main(self, secs):
-        self.bridge.create_task(self._timer(secs))
+    def main(self, ctx, secs):
+        ctx.create_task(self._timer(ctx, secs))
         return 'OK. I will beep in {}'.format(secs)
 
 
@@ -44,7 +44,7 @@ class Downloader(suzie.SlottedPlugin):
     def extract_slot(self, slot, text):
         return text
 
-    def main(self, url):
+    def main(self, ctx, url):
         msg = 'Downloading {url}'
         msg = msg.format(url=url)
         return msg
@@ -78,7 +78,7 @@ class Pizza(suzie.SlottedPlugin):
         elif slot == 'ingredients':
             return [x.strip() for x in text.split(',')]
 
-    def main(self, size, when, ingredients):
+    def main(self, ctx, size, when, ingredients):
         return ("pizza pasta, pasta pizza !1!. "
                 "(size={}, when={}, ingredients={}".format(
                     size, when, ingredients))
@@ -94,7 +94,7 @@ class Events(suzie.Plugin):
         'when'
     ]
 
-    def main(self, about, where, when):
+    def main(self, ctx, about, where, when):
         msg = "OK. Your appointment: {when} at {where}. Subject: {about}"
         msg = msg.format(when=when, where=where, about=about)
         return suzie.ClosingMessage(msg)
@@ -110,18 +110,12 @@ class Notes(suzie.SlottedPlugin):
     ]
 
     def validate_slot(self, slot, text):
-        # dbg = 'Validate {slot} with {text}'
-        # dbg = dbg.format(slot=slot, text=text)
-        # print(dbg, file=sys.stderr)
         return text
 
     def extract_slot(self, slot, text):
-        # dbg = 'Extract {slot} from {text}'
-        # dbg = dbg.format(slot=slot, text=text)
-        # print(dbg, file=sys.stderr)
         return text
 
-    def main(self, item):
+    def main(self, ctx, item):
         msg = 'Got your note: {item}'.format(item=item)
         return msg
 
@@ -142,7 +136,7 @@ class Addition(suzie.SlottedPlugin):
     def extract_slot(self, slot, text):
         return text
 
-    def main(self, x, y):
+    def main(self, ctx, x, y):
         msg = "{x} + {y} = {z}"
         msg = msg.format(x=x, y=y, z=x+y)
         return msg
@@ -169,7 +163,7 @@ class Weather(suzie.Plugin):
         super().__init__(*args, **kwargs)
         self.aemet = aemet.Aemet()
 
-    def main(self, when):
+    def main(self, ctx, when):
         when_table = {
             'hoy': aemet.When.TODAY,
             'mañana': aemet.When.TOMORROW,

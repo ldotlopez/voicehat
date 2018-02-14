@@ -33,7 +33,7 @@ class Plugin:
     TRIGGERS = []
     SLOTS = []
 
-    def __init__(self, bridge, logger=None):
+    def __init__(self, logger=None):
         if not self.TRIGGERS:
             errmsg = "No triggers defined"
             raise TypeError(errmsg)
@@ -42,10 +42,11 @@ class Plugin:
             re.compile(trigger, re.IGNORECASE)
             for trigger in self.__class__.TRIGGERS]
 
-        me = self.__class__.__name__.split('.')[-1]
+        self.logger = None or logging.getLogger(self.NAME)
 
-        self.bridge = bridge
-        self.logger = None or logging.getLogger(me)
+    @property
+    def NAME(self):
+        return self.__class__.__name__.split('.')[-1]
 
     def matches(self, text):
         for trigger in self.triggers:
@@ -103,7 +104,7 @@ class SlottedPlugin(Plugin):
     def extract_slot(self, slot, text):
         raise NotImplementedError()
 
-    def fill_slot(self, memory, slot, message):
+    def fill_slot(self, ctx, slot, message):
         value = self.extract_slot(slot, str(message))
         if not value:
             raise exc.SlotFilingError(slot, message)
@@ -115,93 +116,65 @@ class SlottedPlugin(Plugin):
             errmsg = errmsg.format(value=value, slot=slot)
             raise exc.SlotFilingError(slot, message, errmsg) from e
 
-        memory[SLOTS_PREFIX + slot] = value
+        ctx.memory[SLOTS_PREFIX + slot] = value
 
-    def handle(self, memory, message):
-        def _get_slots():
-            n = len(SLOTS_PREFIX)
-            return {
-                k[n:]: v for (k, v)
-                in memory.items()
-                if k.startswith(SLOTS_PREFIX)}
-
-        slot = memory.get(ACTIVE_SLOT)
-        if slot is not None:
+    def handle(self, ctx, message):
+        # Try to fill active slot
+        active_slot = ctx.memory.get(ACTIVE_SLOT)
+        if active_slot is not None:
             try:
-                self.fill_slot(memory, slot, message)
+                self.fill_slot(ctx, active_slot, message)
             except exc.SlotFilingError:
                 pass
 
-        missing = set(self.SLOTS) - set(_get_slots().keys())
-        if not missing:
-            return ClosingMessage(self.main(**_get_slots()))
+        # Extract slots from Context.memory
+        prefix_len = len(SLOTS_PREFIX)
+        slots = {
+            k[prefix_len:]: v for (k, v)
+            in ctx.memory.items()
+            if k.startswith(SLOTS_PREFIX)
+        }
 
-        else:
-            memory[ACTIVE_SLOT] = missing.pop()
-            msg = "Give " + memory[ACTIVE_SLOT]
+        # Check for missing slots and ask for one or run Plugin.main
+        missing = set(self.SLOTS) - set(slots.keys())
+        if missing:
+            ctx.memory[ACTIVE_SLOT] = missing.pop()
+            msg = "Give " + ctx.memory[ACTIVE_SLOT]
             return Message(msg)
 
+        else:
+            msg = self.main(ctx, **slots)
+            return ClosingMessage(msg)
+
     @abc.abstractmethod
-    def main(self, **kwargs):
+    def main(self, ctx, **kwargs):
         raise NotImplementedError()
 
 
-class Conversation:
-    def __init__(self, plugin, **init_params):
-        self.plugin = plugin
-        self.log = []
+class Context:
+    def __init__(self, plugin_name, ui, push_queue, loop=None):
+        self.plugin_name = plugin_name
+        self.ui = ui
         self.memory = {}
-
-        # FIXME: For now we use Plugin.setup but in the future we have
-        # to instantiate the Plugin on demand, so init_params will be
-        # passed to Plugin.__init__
-        plugin.setup(self.memory, **init_params)
-
-    def handle(self, message, is_trigger=False):
-        if not isinstance(message, str):
-            raise TypeError(message)
-
-        if self.closed:
-            raise TypeError('closed conversation')
-
-        self.log.append(message)
-        if not is_trigger:
-            resp = self.plugin.handle(self.memory, message)
-
-        self.log.append(resp)
-        return resp
-
-    @property
-    def closed(self):
-        return self.log and isinstance(self.log[-1], ClosingMessage)
-
-
-class BridgeAPI:
-    def __init__(self, push_queue, loop=None):
-        self._loop = loop or asyncio.get_event_loop()
-        self._push_queue = push_queue
+        self.loop = loop or asyncio.get_event_loop()
+        self.push_queue = push_queue
 
     def create_task(self, coro):
-        return self._loop.create_task(coro)
+        return self.loop.create_task(coro)
 
     def push_message(self, message):
-        self._push_queue.put_nowait(message)
+        self.push_queue.put_nowait(message)
 
 
 class Router:
-    def __init__(self, ui, plugins=None):
-
+    def __init__(self, plugins=None):
         plugins = plugins or []
+        self._ui_tasks = {}
         self.registry = set(plugins)
-        self.ui = ui
-        self.conversation = None
         self.loop = asyncio.get_event_loop()
-        self.queue = asyncio.Queue()
-
-        self.bridge = BridgeAPI(push_queue=self.queue, loop=self.loop)
 
     def load(self, plugin_cls):
-        self.register(plugin_cls(self.bridge))
+        self.register(plugin_cls())
 
     def register(self, plugin):
         self.registry.add(plugin)
@@ -223,49 +196,56 @@ class Router:
         except StopIteration:
             raise exc.MessageNotMatched(text)
 
-    def handle(self, text):
-        # Sanitize text
-        text = re.subn(r'\s+', ' ', text.strip())[0]
-
-        is_trigger = False
-
-        if self.conversation is None:
-            plugin, init_params = self.get_handler(text)
-            self.conversation = Conversation(plugin, **init_params)
-
-        response = self.conversation.handle(text, is_trigger=is_trigger)
-        if self.conversation.closed:
-            self.conversation = None
-
-        return response
-
-    def main(self):
-
+    async def _handle_ui(self, ui):
         async def _queue_handler():
             while True:
-                msg = await self.queue.get()
-                print("Got msg from queue:", msg)
+                msg = await push_queue.get()
+                await ui.send(msg)
 
-        async def _main():
-            while True:
-                msg = await self.ui.recv()
+        context = None
+        push_queue = asyncio.Queue()
+        push_task = self.loop.create_task(_queue_handler())
 
-                if self.conversation is None and msg in ['bye', 'q']:
-                    self.loop.stop()
-                    break
+        while True:
+            try:
+                msg = await ui.recv()
+            except EOFError:
+                break
 
+            text = str(msg)
+
+            if context is None:
                 try:
-                    resp = self.handle(msg)
+                    plugin, init_params = self.get_handler(text)
                 except exc.MessageNotMatched:
-                    resp = "[?] I don't how to handle that"
-                    await self.ui.send(resp)
+                    response = "[?] I don't how to handle that"
+                    await ui.send(response)
                     continue
 
-                self.ui.set_conversation(self.conversation)
-                await self.ui.send(resp)
+                context = Context(plugin_name=plugin.NAME, ui=ui,
+                                  push_queue=push_queue)
+                plugin.setup(context, **init_params)
 
-        self.loop.create_task(_queue_handler())
-        self.loop.create_task(_main())
+            response = plugin.handle(context, text)
+            if isinstance(response, ClosingMessage):
+                context = None
+
+            await ui.send(response)
+            ui.set_context(context)
+
+        push_task.cancel()
+        self.remove_ui(ui)
+
+    def add_ui(self, ui):
+        task = self.loop.create_task(self._handle_ui(ui))
+        self._ui_tasks[ui] = task
+
+    def remove_ui(self, ui):
+        del(self._ui_tasks[ui])
+        if not self._ui_tasks:
+            self.loop.stop()
+
+    def main(self):
         self.loop.run_forever()
 
 
@@ -279,7 +259,7 @@ class UserInterface:
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def set_conversation(self, conversation):
+    def set_context(self, context):
         raise NotImplementedError
 
 
@@ -292,18 +272,19 @@ class CommandLineInterface(UserInterface):
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(None, input, self.prompt)
         text = re.sub(r'\s+', ' ', text.strip())
+        if text in ['q', 'bye']:
+            raise EOFError()
+
         return text
 
     async def send(self, message):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, print, message)
 
-    def set_conversation(self, conversation):
-        if conversation is not None:
+    def set_context(self, context):
+        if context is not None:
             prompt = '[{plugin}] '
-            plugin_cls = conversation.plugin.__class__
-            humanized_cls = plugin_cls.__name__.split('.')[-1].lower()
-            prompt = prompt.format(plugin=humanized_cls)
+            prompt = prompt.format(plugin=context.plugin_name)
             self.prompt = prompt
         else:
             self.prompt = '> '
